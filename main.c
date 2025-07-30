@@ -79,6 +79,17 @@ void *get_in_addr(struct sockaddr *sa) {
     return &((struct sockaddr_in6*)sa)->sin6_addr;
 }
 
+int valid_port(const char * str) {
+    char *endptr;
+    errno = 0;
+
+    long num = strtol(str, &endptr, 10);
+
+    if (errno != 0 || *endptr != '\0' || endptr == str) return 1;
+    if (num <= 0 || num > 65535) return 1;
+    return 0;
+}
+
 int main(int argc, char *argv[]) {
     int sockfd;
     struct addrinfo *servinfo = 0;
@@ -89,7 +100,12 @@ int main(int argc, char *argv[]) {
     char recvbuf[1024];
     char sendbuf[100000];
 
-    if (get_addr_info(&servinfo, "8080") != EXIT_SUCCESS) {
+    if (valid_port(argv[1]) != 0) {
+        printf("Invalid port number\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (get_addr_info(&servinfo, argv[1]) != EXIT_SUCCESS) {
         exit(EXIT_FAILURE);
     }
 
@@ -112,7 +128,7 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    printf("server: Listening on port %s...\n", "8080");
+    printf("server: Listening on port %s...\n", argv[1]);
 
     while (1) {
         sin_size = sizeof their_addr;
@@ -125,7 +141,7 @@ int main(int argc, char *argv[]) {
         }
 
         inet_ntop(their_addr.ss_family, get_in_addr((struct sockaddr *)&their_addr), s, sizeof s);
-        printf("server: got connection from %s\n", s);
+        // printf("origin: %s\n", s);
 
         if (!fork()) {
             close(sockfd);
@@ -134,6 +150,7 @@ int main(int argc, char *argv[]) {
 
             HttpRequest *request = malloc(sizeof(HttpRequest));
             parse_request(recvbuf, request);
+            show_request(request);
             memset(recvbuf, 0, sizeof(recvbuf));
 
             HttpResponse *response = pack_response(request);
