@@ -65,7 +65,7 @@ void show_request(HttpRequest * req) {
     }
 }
 
-int get_content(const char * path, HttpResponse * res) {
+int get_content(const char * path, Content * res) {
     char trimmed_path[MAX_PATH_LEN];
 
     if (path[0] == '/') {
@@ -86,7 +86,7 @@ int get_content(const char * path, HttpResponse * res) {
             if (bufsize == -1) return 500;
 
             res->body = malloc(sizeof(char) * (bufsize + 1));
-            res->bodyLength = bufsize;
+            res->body_len = bufsize;
 
             if (fseek(fp, 0L, SEEK_SET) != 0) return 500;
 
@@ -130,12 +130,14 @@ int EndsWith(const char *str, const char *suffix) {
 char* get_content_type(const char * path) {
     if (EndsWith(path, ".html")) return "text/html";
     if (EndsWith(path, ".ico")) return "image/x-icon";
+    if (EndsWith(path, ".jpg") || EndsWith(path, ".jpeg")) return "image/jpeg";
     if (EndsWith(path, ".css")) return "text/css";
     return "";
 }
 
 HttpResponse* pack_response(const HttpRequest * req) {
     HttpResponse * res = malloc(sizeof(HttpResponse));
+    res->content = malloc(sizeof(Content));
 
     strcpy(res->version ,"HTTP/1.1");
     res->version[strlen("HTTP/1.1")] = '\0';
@@ -143,10 +145,10 @@ HttpResponse* pack_response(const HttpRequest * req) {
     switch (req->method) {
         case GET:
             if (strcmp(req->path, "/") == 0) {
-                res->statusCode = get_content("index.html", res);
+                res->statusCode = get_content("index.html", res->content);
             }
             else {
-                res->statusCode = get_content(req->path, res);
+                res->statusCode = get_content(req->path, res->content);
             }
 
             switch (res->statusCode) {
@@ -157,7 +159,7 @@ HttpResponse* pack_response(const HttpRequest * req) {
                     set_header(res, "Content-Type", get_content_type(req->path));
 
                     char len[20];
-                    sprintf(len, "%lu", res->bodyLength);
+                    sprintf(len, "%lu", res->content->body_len);
                     set_header(res, "Content-Length", len);
                     set_header(res, "Cache-Control", "max-age=86400");
                     break;
@@ -165,9 +167,9 @@ HttpResponse* pack_response(const HttpRequest * req) {
                     const char * notFound = "File not Found";
                     strcpy(res->reasonPhrase, notFound);
                     res->reasonPhrase[strlen(notFound)] = '\0';
-                    get_content("404.html", res);
+                    get_content("404.html", res->content);
                     char len404[20];
-                    sprintf(len404, "%lu", res->bodyLength);
+                    sprintf(len404, "%lu", res->content->body_len);
                     set_header(res, "Content-Length", len404);
                     set_header(res, "Cache-Control", "max-age=86400");
                     break;
@@ -213,16 +215,16 @@ int serialize_response(const HttpResponse * resp, char * buffer, size_t buffer_s
     buffer[offset++] = '\n';
 
     // Body
-    if (resp->body && resp->bodyLength > 0) {
-        if (offset + resp->bodyLength >= buffer_size) return -1;
-        memcpy(buffer + offset, resp->body, resp->bodyLength);
-        offset += resp->bodyLength;
+    if (resp->content->body && resp->content->body_len > 0) {
+        if (offset + resp->content->body_len >= buffer_size) return -1;
+        memcpy(buffer + offset, resp->content->body, resp->content->body_len);
+        offset += resp->content->body_len;
     }
 
     return offset; // total bytes written
 }
 
 void free_response(HttpResponse * res) {
-    free(res->body);
+    free(res->content);
     free(res);
 }
