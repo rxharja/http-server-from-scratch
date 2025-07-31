@@ -65,17 +65,21 @@ void show_request(HttpRequest * req) {
     }
 }
 
+void trim_path(const char * path, char * trimmed_path) {
+    int ptr = 0;
+
+    while (path[ptr] == '.' || path[ptr] == '/') {
+        ptr++;
+    }
+
+    strncpy(trimmed_path, path + ptr, MAX_PATH_LEN - 1);
+    trimmed_path[MAX_PATH_LEN - 1] = '\0';
+}
+
 int get_content(const char * path, Content * res) {
     char trimmed_path[MAX_PATH_LEN];
 
-    if (path[0] == '/') {
-        strncpy(trimmed_path, path + 1, MAX_PATH_LEN - 1);
-        trimmed_path[MAX_PATH_LEN - 1] = '\0';
-    }
-    else {
-        strncpy(trimmed_path, path, MAX_PATH_LEN - 1);
-        trimmed_path[MAX_PATH_LEN - 1] = '\0';
-    }
+    trim_path(path, trimmed_path);
 
     FILE *fp = fopen(trimmed_path, "rb");
 
@@ -116,6 +120,7 @@ void set_header(HttpResponse *res, const char *name, const char *value) {
         res->headerCount++;
     }
 }
+
 int EndsWith(const char *str, const char *suffix) {
     if (!str || !suffix) return 0;
 
@@ -131,6 +136,7 @@ char* get_content_type(const char * path) {
     if (EndsWith(path, ".html")) return "text/html";
     if (EndsWith(path, ".ico")) return "image/x-icon";
     if (EndsWith(path, ".jpg") || EndsWith(path, ".jpeg")) return "image/jpeg";
+    if (EndsWith(path, ".png") || EndsWith(path, ".jpeg")) return "image/png";
     if (EndsWith(path, ".css")) return "text/css";
     return "";
 }
@@ -138,6 +144,10 @@ char* get_content_type(const char * path) {
 HttpResponse* pack_response(const HttpRequest * req) {
     HttpResponse * res = malloc(sizeof(HttpResponse));
     res->content = malloc(sizeof(Content));
+
+    if (res == NULL || res->content == NULL) {
+        exit(EXIT_FAILURE);
+    }
 
     strcpy(res->version ,"HTTP/1.1");
     res->version[strlen("HTTP/1.1")] = '\0';

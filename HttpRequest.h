@@ -70,4 +70,5 @@ char* get_content_type(const char * path);
 
 int serialize_response(const HttpResponse * resp, char * buffer, size_t buffer_size);
 
+//TODO: add data structure to cache requested content
 #endif //HTTPREQUEST_H
