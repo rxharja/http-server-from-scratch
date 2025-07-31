@@ -100,6 +100,11 @@ int main(int argc, char *argv[]) {
     char recvbuf[1024];
     char sendbuf[100000];
 
+    if (argc != 2) {
+       printf("Usage: %s <port>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
     if (valid_port(argv[1]) != 0) {
         printf("Invalid port number\n");
         exit(EXIT_FAILURE);
