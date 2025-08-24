@@ -5,8 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 #include "HttpRequest.h"
-
 #include <stdlib.h>
+
+#include "lib/Dictionary.h"
 
 HttpMethod parse_http_method(const char *method) {
     if (strcmp(method, "GET") == 0) return GET;
@@ -76,6 +77,31 @@ void trim_path(const char * path, char * trimmed_path) {
     trimmed_path[MAX_PATH_LEN - 1] = '\0';
 }
 
+Dictionary * preload_cache(void) {
+    Dictionary * d = dict_init();
+
+    Content * styles = malloc(sizeof(Content));
+    Content * index = malloc(sizeof(Content));
+    Content * fourOhfour = malloc(sizeof(Content));
+    Content * img = malloc(sizeof(Content));
+
+    get_content("styles.css", styles);
+    get_content("index.html", index);
+    get_content("404.html", fourOhfour);
+    get_content("img.jpg", img);
+
+    dict_insert(d, "styles.css", styles);
+    dict_insert(d, "index.html", index);
+    dict_insert(d, "404.html", fourOhfour);
+    dict_insert(d, "img.jpg", img);
+
+    return d;
+}
+
+Content * try_get_content(Dictionary * d, char * path) {
+
+}
+
 int get_content(const char * path, Content * res) {
     char trimmed_path[MAX_PATH_LEN];
 
@@ -141,7 +167,7 @@ char* get_content_type(const char * path) {
     return "";
 }
 
-HttpResponse* pack_response(const HttpRequest * req) {
+HttpResponse* pack_response(const HttpRequest * req, const Dictionary * d) {
     HttpResponse * res = malloc(sizeof(HttpResponse));
     res->content = malloc(sizeof(Content));
 
@@ -155,10 +181,17 @@ HttpResponse* pack_response(const HttpRequest * req) {
     switch (req->method) {
         case GET:
             if (strcmp(req->path, "/") == 0) {
-                res->statusCode = get_content("index.html", res->content);
+                res->statusCode = 200;
+                res->content = dict_find(d, "index.html");
             }
             else {
-                res->statusCode = get_content(req->path, res->content);
+                Content * c = dict_find(d, req->path);
+                if (c == NULL) {
+                    res->statusCode = get_content(req->path, res->content);
+                }
+                else {
+                    res->statusCode = 200;
+                }
             }
 
             switch (res->statusCode) {
@@ -177,7 +210,7 @@ HttpResponse* pack_response(const HttpRequest * req) {
                     const char * notFound = "File not Found";
                     strcpy(res->reasonPhrase, notFound);
                     res->reasonPhrase[strlen(notFound)] = '\0';
-                    get_content("404.html", res->content);
+                    res->content = dict_find(d, "404.html");
                     char len404[20];
                     sprintf(len404, "%lu", res->content->body_len);
                     set_header(res, "Content-Length", len404);

@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include "HttpRequest.h"
+#include "lib/Dictionary.h"
 
 #define BACKLOG 10
 
@@ -135,6 +136,8 @@ int main(int argc, char *argv[]) {
 
     printf("server: Listening on port %s...\n", argv[1]);
 
+    Dictionary * content_cache = preload_cache();
+
     while (1) {
         sin_size = sizeof their_addr;
 
@@ -158,7 +161,7 @@ int main(int argc, char *argv[]) {
             show_request(request);
             memset(recvbuf, 0, sizeof(recvbuf));
 
-            HttpResponse *response = pack_response(request);
+            HttpResponse *response = pack_response(request, content_cache);
 
             free(request);
 

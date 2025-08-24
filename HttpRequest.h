@@ -12,6 +12,7 @@
 #define MAX_HEADER_KEY_LEN 64
 #define MAX_HEADER_VALUE_LEN 256
 #define MAX_REASON_PHRASE_LEN 64
+#include "lib/Dictionary.h"
 
 typedef enum {
     GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH, UNKNOWN
@@ -26,6 +27,11 @@ typedef struct {
     char * body;
     long body_len;
 } Content;
+
+typedef struct {
+    Content content;
+    char* Key;
+} CachedContent;
 
 typedef struct {
     HttpMethod method;
@@ -58,7 +64,7 @@ void parse_request(char * message, HttpRequest * req);
 
 void show_request(HttpRequest * req);
 
-HttpResponse* pack_response(const HttpRequest * req);
+HttpResponse* pack_response(const HttpRequest * req, const Dictionary * d);
 
 void free_response(HttpResponse * res);
 
@@ -69,6 +75,8 @@ int get_content(const char * path, Content * res);
 char* get_content_type(const char * path);
 
 int serialize_response(const HttpResponse * resp, char * buffer, size_t buffer_size);
+
+Dictionary * preload_cache(void);
 
 //TODO: add data structure to cache requested content
 #endif //HTTPREQUEST_H
