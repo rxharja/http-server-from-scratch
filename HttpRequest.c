@@ -13,7 +13,7 @@ HttpMethod parse_http_method(const char *method) {
     if (strcmp(method, "GET") == 0) return GET;
     if (strcmp(method, "POST") == 0) return POST;
     if (strcmp(method, "PUT") == 0) return PUT;
-    if (strcmp(method, "DELETE") == 0) return PUT;
+    if (strcmp(method, "DELETE") == 0) return DELETE;
     return UNKNOWN;
 }
 
@@ -98,10 +98,6 @@ Dictionary * preload_cache(void) {
     return d;
 }
 
-Content * try_get_content(Dictionary * d, char * path) {
-
-}
-
 int get_content(const char * path, Content * res) {
     char trimmed_path[MAX_PATH_LEN];
 
@@ -162,8 +158,10 @@ char* get_content_type(const char * path) {
     if (EndsWith(path, ".html")) return "text/html";
     if (EndsWith(path, ".ico")) return "image/x-icon";
     if (EndsWith(path, ".jpg") || EndsWith(path, ".jpeg")) return "image/jpeg";
-    if (EndsWith(path, ".png") || EndsWith(path, ".jpeg")) return "image/png";
+    if (EndsWith(path, ".png")) return "image/png";
     if (EndsWith(path, ".css")) return "text/css";
+    if (EndsWith(path, ".js")) return "application/javascript";
+    if (EndsWith(path, ".wasm")) return "application/wasm";
     return "";
 }
 
@@ -195,7 +193,7 @@ HttpResponse* pack_response(const HttpRequest * req, const Dictionary * d) {
             }
 
             switch (res->statusCode) {
-                case 200:
+                case 200: {
                     const char * ok = "OK";
                     strcpy(res->reasonPhrase, ok);
                     res->reasonPhrase[strlen(ok)] = '\0';
@@ -206,7 +204,8 @@ HttpResponse* pack_response(const HttpRequest * req, const Dictionary * d) {
                     set_header(res, "Content-Length", len);
                     set_header(res, "Cache-Control", "max-age=86400");
                     break;
-                case 404:
+                }
+                case 404: {
                     const char * notFound = "File not Found";
                     strcpy(res->reasonPhrase, notFound);
                     res->reasonPhrase[strlen(notFound)] = '\0';
@@ -216,11 +215,13 @@ HttpResponse* pack_response(const HttpRequest * req, const Dictionary * d) {
                     set_header(res, "Content-Length", len404);
                     set_header(res, "Cache-Control", "max-age=86400");
                     break;
-                default:
+                }
+                default: {
                     const char * error = "Internal Server Error";
                     strcpy(res->reasonPhrase, error);
                     res->reasonPhrase[strlen(error)] = '\0';
                     break;
+                }
             }
             break;
 
