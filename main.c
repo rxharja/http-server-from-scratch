@@ -91,7 +91,16 @@ int valid_port(const char * str) {
     return 0;
 }
 
+static volatile sig_atomic_t keepRunning = 1;
+
+void intHandler(const int sig) {
+    (void)sig; // unused
+    keepRunning = 0;
+}
+
 int main(int argc, char *argv[]) {
+    signal(SIGINT, intHandler);
+
     int sockfd;
     struct addrinfo *servinfo = 0;
     struct sockaddr_storage their_addr;
@@ -138,7 +147,7 @@ int main(int argc, char *argv[]) {
 
     Dictionary * content_cache = preload_cache();
 
-    while (1) {
+    while (keepRunning) {
         sin_size = sizeof their_addr;
 
         const int new_fd = accept(sockfd, (struct sockaddr *) &their_addr, &sin_size);
@@ -165,7 +174,7 @@ int main(int argc, char *argv[]) {
 
             free(request);
 
-            int res_len = serialize_response(response, sendbuf, sizeof(sendbuf) );
+            const int res_len = serialize_response(response, sendbuf, sizeof(sendbuf) );
 
             if (send(new_fd, sendbuf, res_len, 0) == -1) {
                 perror("send");
@@ -181,6 +190,8 @@ int main(int argc, char *argv[]) {
 
         close(new_fd);
     }
+
+    free_dict(content_cache);
 
     return EXIT_SUCCESS;
 }
