@@ -11,7 +11,7 @@ These bite at any HTTP version.
 - [x] Dead `.png` check fixed at `HttpRequest.c:161`
 - [x] `parse_http_method` returns `PUT` for `"DELETE"` at `HttpRequest.c:16`
 - [x] 404 reason phrase is `"File not Found"`; canonical is `Not Found`.
-- [ ] Replace single `recv()` at `main.c:166` with a read loop that grows the buffer until `\r\n\r\n`, then up to `Content-Length` more bytes
+- [x] Replace single `recv()` at `main.c:166` with a read loop that grows the buffer until `\r\n\r\n`, then up to `Content-Length` more bytes
 - [ ] Replace `strtok` parser — mutates input, not reentrant, collapses repeated CRLF. Hand-roll a tokenizer that tracks positions.
 - [ ] Header parser at `HttpRequest.c:51` assumes exactly `": "` after the colon. Spec allows zero-or-more OWS on either side.
 - [ ] `free_response` at `HttpRequest.c:267` `free()`s cached `Content*` on cache hits. Add an `owns_content` flag, or always copy.

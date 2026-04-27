@@ -84,7 +84,7 @@ int valid_port(const char * str) {
     char *endptr;
     errno = 0;
 
-    long num = strtol(str, &endptr, 10);
+    const long num = strtol(str, &endptr, 10);
 
     if (errno != 0 || *endptr != '\0' || endptr == str) return 1;
     if (num <= 0 || num > 65535) return 1;
@@ -98,6 +98,49 @@ void intHandler(const int sig) {
     keepRunning = 0;
 }
 
+typedef enum {
+    READ_HEADER_OK = 0,
+    READ_HEADER_PEER_CLOSED,
+    READ_HEADER_TOO_LARGE,
+    READ_HEADER_IO_ERROR,
+} ReadHeaderStatus;
+
+typedef struct {
+    ReadHeaderStatus status;
+    ssize_t          total_received;
+    ssize_t          body_start;   // offset just past \r\n\r\n
+} ReadHeaderResult;
+
+// todo: blocking I/O, needs to handle EAGAIN/EWOULDBLOCK
+static ReadHeaderResult recv_header(const int fd, char *header_buf, const ssize_t header_cap) {
+    ReadHeaderResult res = {0};
+    while (1) {
+        if (res.total_received == header_cap) {
+            res.status = READ_HEADER_TOO_LARGE; // return 431
+            break;
+        }
+        const ssize_t got = recv(fd, &header_buf[res.total_received], header_cap - res.total_received, 0);
+        if (got == 0) {
+            res.status = READ_HEADER_PEER_CLOSED; // 400
+            break;
+        }
+        if (got > 0) res.total_received += got;
+        else { // -1
+            if (errno == EINTR) continue;
+            res.status = READ_HEADER_IO_ERROR;
+            break;
+        }
+        const char *terminator = memmem(header_buf, res.total_received, "\r\n\r\n", 4);
+        if (terminator != NULL) {
+            res.status = READ_HEADER_OK;
+            res.body_start = terminator - header_buf + 4;
+            break;
+        }
+    }
+
+    return res;
+}
+
 int main(int argc, char *argv[]) {
     signal(SIGINT, intHandler);
 
@@ -107,6 +150,7 @@ int main(int argc, char *argv[]) {
     socklen_t sin_size;
     struct sigaction sa;
     char s[INET6_ADDRSTRLEN];
+    char header_buf[8192]; // todo: turn this into not magic
     char recvbuf[1024];
     char sendbuf[100000];
 
@@ -163,10 +207,15 @@ int main(int argc, char *argv[]) {
         if (!fork()) {
             close(sockfd);
 
-            recv(new_fd, &recvbuf, sizeof(recvbuf), 0);
+            const ReadHeaderResult header_res = recv_header(new_fd, header_buf, 8192);
+            if (header_res.status == READ_HEADER_PEER_CLOSED) close(new_fd); // maybe send 400 here
+            if (header_res.status == READ_HEADER_IO_ERROR) close(new_fd);
+            if (header_res.status == READ_HEADER_TOO_LARGE) close(new_fd); // send a 431 here
+
+            recv_header(new_fd, header_buf, 8192);
 
             HttpRequest *request = malloc(sizeof(HttpRequest));
-            parse_request(recvbuf, request);
+            parse_request(header_buf, request); // todo: res.body_start needed here
             show_request(request);
             memset(recvbuf, 0, sizeof(recvbuf));
 
