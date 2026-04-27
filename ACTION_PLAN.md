@@ -10,12 +10,12 @@ These bite at any HTTP version.
 - [x] `.wasm` and `.js` Content-Type mappings added to `get_content_type`
 - [x] Dead `.png` check fixed at `HttpRequest.c:161`
 - [x] `parse_http_method` returns `PUT` for `"DELETE"` at `HttpRequest.c:16`
+- [x] 404 reason phrase is `"File not Found"`; canonical is `Not Found`.
 - [ ] Replace single `recv()` at `main.c:166` with a read loop that grows the buffer until `\r\n\r\n`, then up to `Content-Length` more bytes
 - [ ] Replace `strtok` parser — mutates input, not reentrant, collapses repeated CRLF. Hand-roll a tokenizer that tracks positions.
 - [ ] Header parser at `HttpRequest.c:51` assumes exactly `": "` after the colon. Spec allows zero-or-more OWS on either side.
 - [ ] `free_response` at `HttpRequest.c:267` `free()`s cached `Content*` on cache hits. Add an `owns_content` flag, or always copy.
 - [ ] `res->content = malloc(...)` at `HttpRequest.c:168` is overwritten by `dict_find` at line 181 — leak on every cache hit.
-- [ ] 404 reason phrase is `"File not Found"`; canonical is `Not Found`.
 - [ ] `sendbuf` is a 100 KB stack array in `main.c`. Required for serving WASM payloads. Send headers and body directly to the socket in two `send()` calls instead of pre-serializing.
 - [ ] No URL decoding; no path/query separation. `/foo%20bar?x=1` opens a literal file named that.
 - [ ] No connection-level read timeout. Use `SO_RCVTIMEO` or `select`/`poll`.

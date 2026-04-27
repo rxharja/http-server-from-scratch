@@ -206,7 +206,7 @@ HttpResponse* pack_response(const HttpRequest * req, const Dictionary * d) {
                     break;
                 }
                 case 404: {
-                    const char * notFound = "File not Found";
+                    const char * notFound = "Not Found";
                     strcpy(res->reasonPhrase, notFound);
                     res->reasonPhrase[strlen(notFound)] = '\0';
                     res->content = dict_find(d, "404.html");
