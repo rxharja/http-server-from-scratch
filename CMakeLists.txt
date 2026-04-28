@@ -3,5 +3,5 @@ project(HttpServer C)
 
 set(CMAKE_C_STANDARD 11)
 
-add_executable(HttpServer main.c HttpRequest.c HttpRequest.h
+add_executable(HttpServer main.c HttpRequest.c HttpRequest.h HttpResponse.c HttpResponse.h
         lib/linked_node_macro.h lib/Dictionary.c lib/Dictionary.h)

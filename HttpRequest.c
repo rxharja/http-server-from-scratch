@@ -5,7 +5,10 @@
 #include <stdio.h>
 #include <string.h>
 #include "HttpRequest.h"
+
+#include <errno.h>
 #include <stdlib.h>
+#include <sys/socket.h>
 
 #include "lib/Dictionary.h"
 
@@ -66,209 +69,37 @@ void show_request(HttpRequest * req) {
     }
 }
 
-void trim_path(const char * path, char * trimmed_path) {
-    int ptr = 0;
-
-    while (path[ptr] == '.' || path[ptr] == '/') {
-        ptr++;
-    }
-
-    strncpy(trimmed_path, path + ptr, MAX_PATH_LEN - 1);
-    trimmed_path[MAX_PATH_LEN - 1] = '\0';
-}
-
-Dictionary * preload_cache(void) {
-    Dictionary * d = dict_init();
-
-    Content * styles = malloc(sizeof(Content));
-    Content * index = malloc(sizeof(Content));
-    Content * fourOhfour = malloc(sizeof(Content));
-    Content * img = malloc(sizeof(Content));
-
-    get_content("styles.css", styles);
-    get_content("index.html", index);
-    get_content("404.html", fourOhfour);
-    get_content("img.jpg", img);
-
-    dict_insert(d, "styles.css", styles);
-    dict_insert(d, "index.html", index);
-    dict_insert(d, "404.html", fourOhfour);
-    dict_insert(d, "img.jpg", img);
-
-    return d;
-}
-
-int get_content(const char * path, Content * res) {
-    char trimmed_path[MAX_PATH_LEN];
-
-    trim_path(path, trimmed_path);
-
-    FILE *fp = fopen(trimmed_path, "rb");
-
-    if (fp != NULL) {
-        if (fseek(fp, 0L, SEEK_END) == 0) {
-            const long bufsize = ftell(fp);
-
-            if (bufsize == -1) return 500;
-
-            res->body = malloc(sizeof(char) * (bufsize + 1));
-            res->body_len = bufsize;
-
-            if (fseek(fp, 0L, SEEK_SET) != 0) return 500;
-
-            size_t newLen = fread(res->body, sizeof(char), bufsize, fp);
-
-            if ( ferror( fp ) != 0 ) {
-                fputs("Error reading file", stderr);
-            }
-            else {
-                res->body[newLen++] = '\0';
-            }
+// todo: blocking I/O, needs to handle EAGAIN/EWOULDBLOCK
+ReadHeaderResult recv_header(const int fd, char *header_buf, const ssize_t header_cap) {
+    ReadHeaderResult res = {0};
+    while (1) {
+        if (res.total_received >= header_cap) {
+            res.status = READ_HEADER_TOO_LARGE; // return 431
+            break;
         }
 
-        fclose(fp);
-    }
-    else {
-        return 404;
-    }
+        const ssize_t got = recv(fd, &header_buf[res.total_received], header_cap - res.total_received, 0);
 
-    return 200;
-}
-
-void set_header(HttpResponse *res, const char *name, const char *value) {
-    if (res->headerCount < MAX_HEADERS) {
-        strncpy(res->headers[res->headerCount].key, name, MAX_HEADER_KEY_LEN);
-        strncpy(res->headers[res->headerCount].value, value, MAX_HEADER_VALUE_LEN);
-        res->headerCount++;
-    }
-}
-
-int EndsWith(const char *str, const char *suffix) {
-    if (!str || !suffix) return 0;
-
-    const size_t lenstr = strlen(str);
-    const size_t lensuffix = strlen(suffix);
-
-    if (lensuffix >  lenstr) return 0;
-
-    return strncmp(str + lenstr - lensuffix, suffix, lensuffix) == 0;
-}
-
-char* get_content_type(const char * path) {
-    if (EndsWith(path, ".html")) return "text/html";
-    if (EndsWith(path, ".ico")) return "image/x-icon";
-    if (EndsWith(path, ".jpg") || EndsWith(path, ".jpeg")) return "image/jpeg";
-    if (EndsWith(path, ".png")) return "image/png";
-    if (EndsWith(path, ".css")) return "text/css";
-    if (EndsWith(path, ".js")) return "application/javascript";
-    if (EndsWith(path, ".wasm")) return "application/wasm";
-    return "";
-}
-
-HttpResponse* pack_response(const HttpRequest * req, const Dictionary * d) {
-    HttpResponse * res = malloc(sizeof(HttpResponse));
-    res->content = malloc(sizeof(Content));
-
-    if (res == NULL || res->content == NULL) {
-        exit(EXIT_FAILURE);
-    }
-
-    strcpy(res->version ,"HTTP/1.1");
-    res->version[strlen("HTTP/1.1")] = '\0';
-
-    switch (req->method) {
-        case GET:
-            if (strcmp(req->path, "/") == 0) {
-                res->statusCode = 200;
-                res->content = dict_find(d, "index.html");
-            }
-            else {
-                Content * c = dict_find(d, req->path);
-                if (c == NULL) {
-                    res->statusCode = get_content(req->path, res->content);
-                }
-                else {
-                    res->statusCode = 200;
-                }
-            }
-
-            switch (res->statusCode) {
-                case 200: {
-                    const char * ok = "OK";
-                    strcpy(res->reasonPhrase, ok);
-                    res->reasonPhrase[strlen(ok)] = '\0';
-                    set_header(res, "Content-Type", get_content_type(req->path));
-
-                    char len[20];
-                    sprintf(len, "%lu", res->content->body_len);
-                    set_header(res, "Content-Length", len);
-                    set_header(res, "Cache-Control", "max-age=86400");
-                    break;
-                }
-                case 404: {
-                    const char * notFound = "Not Found";
-                    strcpy(res->reasonPhrase, notFound);
-                    res->reasonPhrase[strlen(notFound)] = '\0';
-                    res->content = dict_find(d, "404.html");
-                    char len404[20];
-                    sprintf(len404, "%lu", res->content->body_len);
-                    set_header(res, "Content-Length", len404);
-                    set_header(res, "Cache-Control", "max-age=86400");
-                    break;
-                }
-                default: {
-                    const char * error = "Internal Server Error";
-                    strcpy(res->reasonPhrase, error);
-                    res->reasonPhrase[strlen(error)] = '\0';
-                    break;
-                }
-            }
+        if (got == 0) {
+            res.status = READ_HEADER_PEER_CLOSED; // 400
             break;
+        }
 
-        default:
-            res->statusCode = 405;
-            const char * reason = "Method not allowed";
-            strcpy(res->reasonPhrase, reason);
-            res->reasonPhrase[strlen(reason)] = '\0';
+        if (got > 0) res.total_received += got;
+        else { // -1
+            if (errno == EINTR) continue;
+            res.status = READ_HEADER_IO_ERROR;
             break;
+        }
+
+        const char *terminator = memmem(header_buf, res.total_received, "\r\n\r\n", 4);
+
+        if (terminator != NULL) {
+            res.status = READ_HEADER_OK;
+            res.body_start = terminator - header_buf + 4;
+            break;
+        }
     }
 
     return res;
-}
-
-int serialize_response(const HttpResponse * resp, char * buffer, size_t buffer_size) {
-    int offset = 0;
-
-    // Start line
-    int written = snprintf(buffer + offset, buffer_size - offset,
-                           "%s %d %s\r\n", resp->version, resp->statusCode, resp->reasonPhrase);
-    if (written < 0 || written >= buffer_size - offset) return -1;
-    offset += written;
-
-    // Headers
-    for (int i = 0; i < resp->headerCount; i++) {
-        written = snprintf(buffer + offset, buffer_size - offset,
-                           "%s: %s\r\n", resp->headers[i].key, resp->headers[i].value);
-        if (written < 0 || written >= buffer_size - offset) return -1;
-        offset += written;
-    }
-
-    // Blank line
-    if (offset + 2 >= buffer_size) return -1;
-    buffer[offset++] = '\r';
-    buffer[offset++] = '\n';
-
-    // Body
-    if (resp->content->body && resp->content->body_len > 0) {
-        if (offset + resp->content->body_len >= buffer_size) return -1;
-        memcpy(buffer + offset, resp->content->body, resp->content->body_len);
-        offset += resp->content->body_len;
-    }
-
-    return offset; // total bytes written
-}
-
-void free_response(HttpResponse * res) {
-    free(res->content);
-    free(res);
 }

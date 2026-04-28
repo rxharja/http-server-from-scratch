@@ -10,6 +10,8 @@
 #include <arpa/inet.h>
 #include <sys/wait.h>
 #include <signal.h>
+
+#include "HttpResponse.h"
 #include "HttpRequest.h"
 #include "lib/Dictionary.h"
 
@@ -98,48 +100,6 @@ void intHandler(const int sig) {
     keepRunning = 0;
 }
 
-typedef enum {
-    READ_HEADER_OK = 0,
-    READ_HEADER_PEER_CLOSED,
-    READ_HEADER_TOO_LARGE,
-    READ_HEADER_IO_ERROR,
-} ReadHeaderStatus;
-
-typedef struct {
-    ReadHeaderStatus status;
-    ssize_t          total_received;
-    ssize_t          body_start;   // offset just past \r\n\r\n
-} ReadHeaderResult;
-
-// todo: blocking I/O, needs to handle EAGAIN/EWOULDBLOCK
-static ReadHeaderResult recv_header(const int fd, char *header_buf, const ssize_t header_cap) {
-    ReadHeaderResult res = {0};
-    while (1) {
-        if (res.total_received == header_cap) {
-            res.status = READ_HEADER_TOO_LARGE; // return 431
-            break;
-        }
-        const ssize_t got = recv(fd, &header_buf[res.total_received], header_cap - res.total_received, 0);
-        if (got == 0) {
-            res.status = READ_HEADER_PEER_CLOSED; // 400
-            break;
-        }
-        if (got > 0) res.total_received += got;
-        else { // -1
-            if (errno == EINTR) continue;
-            res.status = READ_HEADER_IO_ERROR;
-            break;
-        }
-        const char *terminator = memmem(header_buf, res.total_received, "\r\n\r\n", 4);
-        if (terminator != NULL) {
-            res.status = READ_HEADER_OK;
-            res.body_start = terminator - header_buf + 4;
-            break;
-        }
-    }
-
-    return res;
-}
 
 int main(int argc, char *argv[]) {
     signal(SIGINT, intHandler);
