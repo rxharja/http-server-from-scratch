@@ -8,6 +8,7 @@
 #define MAX_HEADERS 32
 #define MAX_METHOD_LEN 8
 #define MAX_PATH_LEN 2048
+#define MAX_QUERY_LEN 512
 #define MAX_VERSION_LEN 16
 #define MAX_HEADER_KEY_LEN 64
 #define MAX_HEADER_VALUE_LEN 256
@@ -32,6 +33,7 @@ char* show_http_method(HttpMethod method);
 typedef struct {
     HttpMethod method;
     char path[MAX_PATH_LEN];
+    char query[MAX_QUERY_LEN];
     char version[MAX_VERSION_LEN];
     Header headers[MAX_HEADERS];
     int header_count;

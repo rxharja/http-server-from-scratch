@@ -26,28 +26,29 @@ char* show_http_method(const HttpMethod method) {
     return "UNKNOWN";
 }
 
+void set_header_error(ParseHeaderResult *res, ParseHeaderStatus status, const char * pos) {
+    res->status = PARSE_BAD_REQUEST;
+    res->error_position = pos;
+}
+
 ParseHeaderResult parse_method(const char * cur, const char *end, HttpRequest * req) {
     ParseHeaderResult res = {0};
     if (cur >= end) {
-        res.status = PARSE_BAD_REQUEST;
-        res.error_position = cur;
+        set_header_error(&res, PARSE_BAD_REQUEST, cur);
         return res;
     }
     if (*cur == ' ') {
-        res.status = PARSE_BAD_REQUEST; // cannot start with whitespace
-        res.error_position = cur;
+        set_header_error(&res, PARSE_BAD_REQUEST, cur);
         return res;
     }
     const char *sp = memchr(cur, ' ', end - cur);
     if (!sp) {
-        res.status = PARSE_BAD_REQUEST;
-        res.error_position = cur;
+        set_header_error(&res, PARSE_BAD_REQUEST, cur);
         return res;
     }
     req->method = parse_http_method(cur, sp - cur);
     if (req->method == UNKNOWN) {
-        res.status = PARSE_BAD_REQUEST;
-        res.error_position = cur;
+        set_header_error(&res, PARSE_BAD_REQUEST, cur);
         return res;
     }
     res.status = PARSE_OK;
@@ -55,51 +56,90 @@ ParseHeaderResult parse_method(const char * cur, const char *end, HttpRequest * 
     return res;
 }
 
+static int is_hex(unsigned char c) {
+   return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
 ParseHeaderResult parse_uri(const char * cur, const char *end, HttpRequest * req) {
     ParseHeaderResult res = {0};
     if (cur >= end) {
-        res.status = PARSE_BAD_REQUEST;
-        res.error_position = cur;
+        set_header_error(&res, PARSE_BAD_REQUEST, cur);
         return res;
     }
 
     const char * sp = memchr(cur, ' ', end - cur);
     if (!sp) {
-        res.status = PARSE_BAD_REQUEST;
-        res.error_position = cur;
+        set_header_error(&res, PARSE_BAD_REQUEST, cur);
         return res;
     }
 
-    if (sp - cur > MAX_PATH_LEN) {
-        res.status = PARSE_URI_TOO_LONG;
-        res.error_position = cur;
-        return res;
-    }
-    
     if (*cur != '/') {
-        res.status = PARSE_BAD_REQUEST;
-        res.error_position = cur;
+        set_header_error(&res, PARSE_BAD_REQUEST, cur);
         return res;
     }
 
-    char path_cur = 0;
-    while ((cur + path_cur) < sp) {
-        if (*(cur + path_cur) < 32 || *(cur + path_cur) > 127) {
-          res.status = PARSE_BAD_REQUEST;
-          res.error_position = cur + path_cur;
+    size_t path_len = 0;
+    size_t query_len = 0;
+    char * buf = req->path;
+    size_t * len_ptr = &path_len;
+    size_t cap = MAX_PATH_LEN;
+    int in_query = 0;
+    size_t i = 0;
+    while (cur + i < sp) {
+        // only use this to check for characters
+        const char c = cur[i++]; // assigns then increments
+
+        if ((unsigned char)c < 0x20 || (unsigned char)c >= 0x7F) {
+          set_header_error(&res, PARSE_BAD_REQUEST, cur + i - 1);
           return res;
         }
 
-        if (*(cur + path_cur) == '#') {
-          res.status = PARSE_BAD_REQUEST;
-          res.error_position = cur + path_cur;
+        if (c == '#') {
+          set_header_error(&res, PARSE_BAD_REQUEST, cur + i - 1);
           return res;
         }
 
-        req->path[path_cur] = *(cur + path_cur);
-        path_cur++;
+        if (!in_query && c == '?') {
+            in_query = 1;
+            buf = req->query;
+            len_ptr = &query_len;
+            cap = MAX_QUERY_LEN;
+            continue;
+        }
+
+        if (*len_ptr >= cap - 1) {
+            set_header_error(&res, PARSE_URI_TOO_LONG, cur + i - 1);
+            return res;
+        }
+
+        if (c == '%') {
+            if (cur + i + 2 > sp) {
+                set_header_error(&res, PARSE_BAD_REQUEST, cur + i - 1);
+                return res;
+            }
+
+            if (!is_hex((u_char)cur[i]) || !is_hex((u_char)cur[i + 1])) {
+                set_header_error(&res, PARSE_BAD_REQUEST, cur + i - 1);
+                return res;
+            }
+
+            if (*len_ptr + 3 > cap - 1) {
+                set_header_error(&res, PARSE_URI_TOO_LONG, cur + i - 1);
+                return res;
+            }
+
+            buf[(*len_ptr)++] = c;
+            buf[(*len_ptr)++] = cur[i];
+            buf[(*len_ptr)++] = cur[i + 1];
+            i += 2;
+            continue;
+        }
+
+        buf[(*len_ptr)++] = c;
     }
-    
+
+    req->query[query_len] = '\0';
+    req->path[path_len] = '\0';
     res.status = PARSE_OK;
     res.next = sp + 1;
     return res;
@@ -112,6 +152,11 @@ ParseHeaderResult parse_version(const char * cur, const char *end, HttpRequest *
         res.error_position = cur;
         return res;
     }
+
+    //TODO: un-stub
+    res.status = PARSE_BAD_REQUEST;
+    res.error_position = cur;
+    return res;
 }
 
 ParseHeaderResult parse_request_line(const char * cur, const char *end, HttpRequest * req) {
