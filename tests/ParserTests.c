@@ -30,6 +30,13 @@ static void expect_uri(const char *label, const char *input, const ParseHeaderSt
     check(label, res.status == want, "uri mismatch");
 }
 
+static void expect_uri_with_query(const char *label, const char *input, const char * query, const ParseHeaderStatus want) {
+    HttpRequest r = {0};
+    ParseHeaderResult res = parse_uri(input, input + strlen(input), &r);
+    check(label, res.status == want, "uri mismatch");
+    check(label, strcmp(r.query, query), "query mismatch");
+}
+
 static void expect_status(const char *label, const char *input, const ParseHeaderStatus want) {
     HttpRequest r = {0};
     ParseHeaderResult res = parse_header(input, strlen(input), &r);
@@ -44,7 +51,9 @@ int main(void) {
     expect_method("Method - Unknown",      "FROBPOO /", UNKNOWN);
 
     expect_uri("URI - plain Index",       "/index.html ",               PARSE_OK);
-    expect_uri("URI - Index with query",  "/index.html?x=1 ",           PARSE_OK);
+    expect_uri_with_query("URI - With Query",  "/index.html?x=1 ", "?x=1", PARSE_OK);
+    expect_uri_with_query("URI - With 2 Queries",  "/index.html?x=1?y=2 ", "?x=1?y=2", PARSE_OK);
+    expect_uri_with_query("URI - Query with Fragment","/index.html?x=1#y=2 ","",PARSE_BAD_REQUEST);
     expect_uri("URI - Percent Encoding",  "/file%20name ",              PARSE_OK);
     expect_uri("URI - no leading /",      "PUT ",                       PARSE_BAD_REQUEST);
     expect_uri("URI - fail on fragment",  "/index.html# ",              PARSE_BAD_REQUEST);
