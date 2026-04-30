@@ -13,7 +13,7 @@
 
 #include "HttpResponse.h"
 #include "HttpRequest.h"
-#include "lib/Dictionary.h"
+#include "../lib/Dictionary.h"
 
 #define BACKLOG 10
 
