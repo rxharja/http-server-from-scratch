@@ -24,10 +24,10 @@ static void expect_method(const char *label, const char *input, const HttpMethod
     check(label, r.method == want, "method mismatch");
 }
 
-static void expect_uri(const char *label, const char *input, const HttpMethod want) {
+static void expect_uri(const char *label, const char *input, const ParseHeaderStatus want) {
     HttpRequest r = {0};
-    parse_uri(input, input + strlen(input), &r);
-    check(label, r.method == want, "method mismatch");
+    ParseHeaderResult res = parse_uri(input, input + strlen(input), &r);
+    check(label, res.status == want, "uri mismatch");
 }
 
 static void expect_status(const char *label, const char *input, const ParseHeaderStatus want) {
@@ -37,17 +37,19 @@ static void expect_status(const char *label, const char *input, const ParseHeade
 }
 
 int main(void) {
-    expect_method("Method - plain GET",    "GET /",  GET);
-    expect_method("Method - plain POST",   "POST ",  POST);
-    expect_method("Method - plain PUT",    "PUT ",   PUT);
-    expect_method("Method - plain DELETE", "DELETE ",DELETE);
-    expect_method("Method - Unknown", "FROBPOO /",UNKNOWN);
+    expect_method("Method - plain GET",    "GET /",     GET);
+    expect_method("Method - plain POST",   "POST ",     POST);
+    expect_method("Method - plain PUT",    "PUT ",      PUT);
+    expect_method("Method - plain DELETE", "DELETE ",   DELETE);
+    expect_method("Method - Unknown",      "FROBPOO /", UNKNOWN);
 
-    expect_uri("URI - plain GET",    "GET /",  GET);
-    expect_uri("URI - plain POST",   "POST ",  POST);
-    expect_uri("URI - plain PUT",    "PUT ",   PUT);
-    expect_uri("URI - plain DELETE", "DELETE ",DELETE);
-    expect_uri("URI - Unknown", "FROBPOO /",UNKNOWN);
+    expect_uri("URI - plain Index",       "/index.html ",               PARSE_OK);
+    expect_uri("URI - Index with query",  "/index.html?x=1 ",           PARSE_OK);
+    expect_uri("URI - Percent Encoding",  "/file%20name ",              PARSE_OK);
+    expect_uri("URI - no leading /",      "PUT ",                       PARSE_BAD_REQUEST);
+    expect_uri("URI - fail on fragment",  "/index.html# ",              PARSE_BAD_REQUEST);
+    expect_uri("URI - Illegal Characters - π",  "/path/π ",              PARSE_BAD_REQUEST);
+    expect_uri("URI - Illegal Characters - control",  "/path\t/tab ",    PARSE_BAD_REQUEST);
 
     expect_status("leading SP",      " GET / HTTP/1.1\r\n\r\n",          PARSE_BAD_REQUEST);
     expect_status("leading HTAB",    "\tGET / HTTP/1.1\r\n\r\n",         PARSE_BAD_REQUEST);

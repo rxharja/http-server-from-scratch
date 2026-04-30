@@ -62,6 +62,47 @@ ParseHeaderResult parse_uri(const char * cur, const char *end, HttpRequest * req
         res.error_position = cur;
         return res;
     }
+
+    const char * sp = memchr(cur, ' ', end - cur);
+    if (!sp) {
+        res.status = PARSE_BAD_REQUEST;
+        res.error_position = cur;
+        return res;
+    }
+
+    if (sp - cur > MAX_PATH_LEN) {
+        res.status = PARSE_URI_TOO_LONG;
+        res.error_position = cur;
+        return res;
+    }
+    
+    if (*cur != '/') {
+        res.status = PARSE_BAD_REQUEST;
+        res.error_position = cur;
+        return res;
+    }
+
+    char path_cur = 0;
+    while ((cur + path_cur) < sp) {
+        if (*(cur + path_cur) < 32 || *(cur + path_cur) > 127) {
+          res.status = PARSE_BAD_REQUEST;
+          res.error_position = cur + path_cur;
+          return res;
+        }
+
+        if (*(cur + path_cur) == '#') {
+          res.status = PARSE_BAD_REQUEST;
+          res.error_position = cur + path_cur;
+          return res;
+        }
+
+        req->path[path_cur] = *(cur + path_cur);
+        path_cur++;
+    }
+    
+    res.status = PARSE_OK;
+    res.next = sp + 1;
+    return res;
 }
 
 ParseHeaderResult parse_version(const char * cur, const char *end, HttpRequest * req) {
