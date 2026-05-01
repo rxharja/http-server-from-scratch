@@ -4,6 +4,7 @@
 
 #include "HttpRequest.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -27,7 +28,7 @@ char* show_http_method(const HttpMethod method) {
 }
 
 void set_header_error(ParseHeaderResult *res, ParseHeaderStatus status, const char * pos) {
-    res->status = PARSE_BAD_REQUEST;
+    res->status = status;
     res->error_position = pos;
 }
 
@@ -57,7 +58,7 @@ ParseHeaderResult parse_method(const char * cur, const char *end, HttpRequest * 
 }
 
 static int is_hex(unsigned char c) {
-   return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+   return isdigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 }
 
 ParseHeaderResult parse_uri(const char * cur, const char *end, HttpRequest * req) {
@@ -104,6 +105,7 @@ ParseHeaderResult parse_uri(const char * cur, const char *end, HttpRequest * req
             buf = req->query;
             len_ptr = &query_len;
             cap = MAX_QUERY_LEN;
+            buf[(*len_ptr)++] = c;
             continue;
         }
 
@@ -147,15 +149,37 @@ ParseHeaderResult parse_uri(const char * cur, const char *end, HttpRequest * req
 
 ParseHeaderResult parse_version(const char * cur, const char *end, HttpRequest * req) {
     ParseHeaderResult res = {0};
-    if (cur >= end) {
-        res.status = PARSE_BAD_REQUEST;
-        res.error_position = cur;
+    if (end - cur != VERSION_LEN) {
+        set_header_error(&res, PARSE_BAD_REQUEST, cur);
         return res;
     }
 
-    //TODO: un-stub
-    res.status = PARSE_BAD_REQUEST;
-    res.error_position = cur;
+    if (memcmp("HTTP/", cur, 5) != 0) {
+        set_header_error(&res, PARSE_BAD_REQUEST, cur);
+        return res;
+    }
+
+    const char d1 = cur[5];
+    const char period = cur[6];
+    const char d2 = end[-1];
+
+    if (!isdigit(d1) || !isdigit(d2) || period != '.') {
+        set_header_error(&res, PARSE_BAD_REQUEST, cur);
+        return res;
+    }
+
+    const int valid_version = memcmp(&cur[5], "0.9", 3) == 0
+                           || memcmp(&cur[5], "1.0", 3) == 0
+                           || memcmp(&cur[5], "1.1", 3) == 0;
+
+    if (!valid_version) {
+        set_header_error(&res, PARSE_VERSION_NOT_SUPPORTED, cur);
+        return res;
+    }
+
+    memcpy(req->version, cur, VERSION_LEN);
+    req->version[VERSION_LEN] = '\0';
+    res.status = PARSE_OK;
     return res;
 }
 
