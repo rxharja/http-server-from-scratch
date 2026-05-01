@@ -9,7 +9,7 @@
 #define MAX_METHOD_LEN 8
 #define MAX_PATH_LEN 2048
 #define MAX_QUERY_LEN 512
-#define MAX_VERSION_LEN 16
+#define VERSION_LEN 8
 #define MAX_HEADER_KEY_LEN 64
 #define MAX_HEADER_VALUE_LEN 256
 #define MAX_REASON_PHRASE_LEN 64
@@ -34,7 +34,7 @@ typedef struct {
     HttpMethod method;
     char path[MAX_PATH_LEN];
     char query[MAX_QUERY_LEN];
-    char version[MAX_VERSION_LEN];
+    char version[VERSION_LEN * 2];
     Header headers[MAX_HEADERS];
     int header_count;
 } HttpRequest;
@@ -61,7 +61,7 @@ ReadHeaderResult recv_header(int fd, char *header_buf, ssize_t header_cap);
 
 /* PARSE HEADER */
 typedef enum {
-    PARSE_OK, PARSE_BAD_REQUEST, PARSE_URI_TOO_LONG, PARSE_HEADER_TOO_LONG
+    PARSE_OK, PARSE_BAD_REQUEST, PARSE_URI_TOO_LONG, PARSE_HEADER_TOO_LONG, PARSE_VERSION_NOT_SUPPORTED
   } ParseHeaderStatus;
 
 typedef struct {
@@ -90,7 +90,7 @@ typedef struct {
 } CachedContent;
 
 typedef struct {
-    char version[MAX_VERSION_LEN];
+    char version[VERSION_LEN];
     long version_len;
     int port;
 } Settings;
