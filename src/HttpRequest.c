@@ -307,15 +307,19 @@ ParseHeaderResult parse_header(const char * buf, const size_t len, HttpRequest *
     return header_res;
 }
 
-void show_request_line(const HttpRequestLine * line) {
-    printf("%s %s %s\r\n", show_http_method(line->method), line->path, line->version);
+static void show_request_line(const HttpRequestLine * line) {
+    printf("%s %s%s %s\n", show_http_method(line->method), line->path, line->query, line->version);
 }
 
-void show_request(HttpRequest * req) {
-    show_request_line(&req->request_line);
-    for (int i = 0; i < req->header_count; i++) {
-        printf("%s: %s\r\n", req->headers[i].key, req->headers[i].value);
+static void show_headers(const Header * headers, const size_t header_count) {
+    for (int i = 0; i < header_count; i++) {
+        printf("%s: %s\n", headers[i].key, headers[i].value);
     }
+}
+
+void show_request(const HttpRequest * req) {
+    show_request_line(&req->request_line);
+    show_headers(req->headers, req->header_count);
 }
 
 // TODO: blocking I/O, needs to handle EAGAIN/EWOULDBLOCK

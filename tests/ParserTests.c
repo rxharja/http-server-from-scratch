@@ -199,6 +199,18 @@ int main(void) {
     expect_status("unknown method",  "FROBNICATE / HTTP/1.1\r\n\r\n",    PARSE_BAD_REQUEST);
     expect_status("empty",           "",                                 PARSE_BAD_REQUEST);
 
+    const char * req_body =
+        "GET /about?x=y HTTP/1.1\r\n"
+        "Host: www.example.com\r\n"
+        "Accept-Language: en-US\r\n"
+        "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)\r\n\r\n";
+
+    HttpRequest req = {0};
+
+    parse_header(req_body, 125, &req);
+
+    show_request(&req);
+
     printf("\n%d/%d passed\n", total - failed, total);
     return failed ? 1 : 0;
 }

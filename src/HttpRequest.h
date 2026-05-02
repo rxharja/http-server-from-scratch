@@ -45,7 +45,7 @@ typedef struct {
 
 void parse_request(char * message, HttpRequest * req);
 
-void show_request(HttpRequest * req);
+void show_request(const HttpRequest * req);
 
 /* READ HEADER */
 typedef enum {
