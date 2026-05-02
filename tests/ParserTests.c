@@ -19,7 +19,7 @@ static void check(const char *label, const int ok, const char *detail) {
 }
 
 static void expect_method(const char *label, const char *input, const HttpMethod want) {
-    HttpRequest r = {0};
+    HttpRequestLine r = {0};
     parse_method(input, input + strlen(input), &r);
     check(label, r.method == want, "method mismatch");
 }
@@ -28,19 +28,19 @@ static void expect_method(const char *label, const char *input, const HttpMethod
 // Useful where the existing expect_method only inspects r.method.
 static void expect_method_full(const char *label, const char *input,
                                const ParseHeaderStatus want_status, const HttpMethod want_method) {
-    HttpRequest r = {0};
+    HttpRequestLine r = {0};
     const ParseHeaderResult res = parse_method(input, input + strlen(input), &r);
     check(label, res.status == want_status && r.method == want_method, "method/status mismatch");
 }
 
 static void expect_uri(const char *label, const char *input, const ParseHeaderStatus want) {
-    HttpRequest r = {0};
+    HttpRequestLine r = {0};
     const ParseHeaderResult res = parse_uri(input, input + strlen(input), &r);
     check(label, res.status == want, "uri mismatch");
 }
 
 static void expect_version(const char *label, const char *input, const ParseHeaderStatus want) {
-    HttpRequest r = {0};
+    HttpRequestLine r = {0};
     // Contract: caller (parse_request_line) hands parse_version the bare
     // version field — CRLF already stripped. Tests mirror that: end = start + len.
     const ParseHeaderResult res = parse_version(input, input + strlen(input), &r);
@@ -50,20 +50,20 @@ static void expect_version(const char *label, const char *input, const ParseHead
 // Same as expect_version but lets the test pin an explicit length, so we can
 // pass inputs containing embedded NULs or trailing bytes the parser shouldn't see.
 static void expect_version_n(const char *label, const char *input, const size_t len, const ParseHeaderStatus want) {
-    HttpRequest r = {0};
+    HttpRequestLine r = {0};
     const ParseHeaderResult res = parse_version(input, input + len, &r);
     check(label, res.status == want, "version mismatch");
 }
 
 static void expect_uri_with_query(const char *label, const char *input, const char * query, const ParseHeaderStatus want) {
-    HttpRequest r = {0};
+    HttpRequestLine r = {0};
     const ParseHeaderResult res = parse_uri(input, input + strlen(input), &r);
     check(label, res.status == want, "uri mismatch");
     if (want == PARSE_OK) check(label, strcmp(r.query, query) == 0, "query mismatch");
 }
 
 static void expect_uri_with_path(const char *label, const char *input, const char *path, const ParseHeaderStatus want) {
-    HttpRequest r = {0};
+    HttpRequestLine r = {0};
     const ParseHeaderResult res = parse_uri(input, input + strlen(input), &r);
     check(label, res.status == want, "uri status mismatch");
     check(label, strcmp(r.path, path) == 0, "path mismatch");
@@ -72,14 +72,14 @@ static void expect_uri_with_path(const char *label, const char *input, const cha
 // Contract: parse_request_line receives [cur, end) with CRLF already stripped
 // by the caller. Tests pass bare request lines (no trailing CRLF).
 static void expect_request_line(const char *label, const char *input, const ParseHeaderStatus want) {
-    HttpRequest r = {0};
+    HttpRequestLine r = {0};
     const ParseHeaderResult res = parse_request_line(input, input + strlen(input), &r);
     check(label, res.status == want, "request_line status mismatch");
 }
 
 static void expect_status(const char *label, const char *input, const ParseHeaderStatus want) {
     HttpRequest r = {0};
-    ParseHeaderResult res = parse_header(input, strlen(input), &r);
+    const ParseHeaderResult res = parse_header(input, strlen(input), &r);
     check(label, res.status == want, "status mismatch");
 }
 

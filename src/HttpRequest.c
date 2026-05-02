@@ -4,6 +4,7 @@
 
 #include "HttpRequest.h"
 
+#include <assert.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
@@ -32,7 +33,7 @@ void set_header_error(ParseHeaderResult *res, ParseHeaderStatus status, const ch
     res->error_position = pos;
 }
 
-ParseHeaderResult parse_method(const char * cur, const char *end, HttpRequest * req) {
+ParseHeaderResult parse_method(const char * cur, const char *end, HttpRequestLine * line) {
     ParseHeaderResult res = {0};
     if (cur >= end) {
         set_header_error(&res, PARSE_BAD_REQUEST, cur);
@@ -47,8 +48,8 @@ ParseHeaderResult parse_method(const char * cur, const char *end, HttpRequest * 
         set_header_error(&res, PARSE_BAD_REQUEST, cur);
         return res;
     }
-    req->method = parse_http_method(cur, sp - cur);
-    if (req->method == UNKNOWN) {
+    line->method = parse_http_method(cur, sp - cur);
+    if (line->method == UNKNOWN) {
         set_header_error(&res, PARSE_BAD_REQUEST, cur);
         return res;
     }
@@ -57,11 +58,8 @@ ParseHeaderResult parse_method(const char * cur, const char *end, HttpRequest * 
     return res;
 }
 
-static int is_hex(unsigned char c) {
-   return isdigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-}
 
-ParseHeaderResult parse_uri(const char * cur, const char *end, HttpRequest * req) {
+ParseHeaderResult parse_uri(const char * cur, const char *end, HttpRequestLine * line) {
     ParseHeaderResult res = {0};
     if (cur >= end) {
         set_header_error(&res, PARSE_BAD_REQUEST, cur);
@@ -81,7 +79,7 @@ ParseHeaderResult parse_uri(const char * cur, const char *end, HttpRequest * req
 
     size_t path_len = 0;
     size_t query_len = 0;
-    char * buf = req->path;
+    char * buf = line->path;
     size_t * len_ptr = &path_len;
     size_t cap = MAX_PATH_LEN;
     int in_query = 0;
@@ -102,7 +100,7 @@ ParseHeaderResult parse_uri(const char * cur, const char *end, HttpRequest * req
 
         if (!in_query && c == '?') {
             in_query = 1;
-            buf = req->query;
+            buf = line->query;
             len_ptr = &query_len;
             cap = MAX_QUERY_LEN;
             buf[(*len_ptr)++] = c;
@@ -140,14 +138,14 @@ ParseHeaderResult parse_uri(const char * cur, const char *end, HttpRequest * req
         buf[(*len_ptr)++] = c;
     }
 
-    req->query[query_len] = '\0';
-    req->path[path_len] = '\0';
+    line->query[query_len] = '\0';
+    line->path[path_len] = '\0';
     res.status = PARSE_OK;
     res.next = sp + 1;
     return res;
 }
 
-ParseHeaderResult parse_version(const char * cur, const char *end, HttpRequest * req) {
+ParseHeaderResult parse_version(const char * cur, const char *end, HttpRequestLine * line) {
     ParseHeaderResult res = {0};
     if (end - cur != VERSION_LEN) {
         set_header_error(&res, PARSE_BAD_REQUEST, cur);
@@ -177,66 +175,144 @@ ParseHeaderResult parse_version(const char * cur, const char *end, HttpRequest *
         return res;
     }
 
-    memcpy(req->version, cur, VERSION_LEN);
-    req->version[VERSION_LEN] = '\0';
+    memcpy(line->version, cur, VERSION_LEN);
+    line->version[VERSION_LEN] = '\0';
     res.status = PARSE_OK;
+    res.next = end;
     return res;
 }
 
-ParseHeaderResult parse_request_line(const char * cur, const char *end, HttpRequest * req) {
-    const ParseHeaderResult method_res = parse_method(cur, end, req);
+ParseHeaderResult parse_request_line(const char * cur, const char *end, HttpRequestLine * line) {
+    const ParseHeaderResult method_res = parse_method(cur, end, line);
     if (method_res.status != PARSE_OK) return method_res;
 
-    const ParseHeaderResult uri_res = parse_uri(method_res.next, end, req);
+    const ParseHeaderResult uri_res = parse_uri(method_res.next, end, line);
     if (uri_res.status != PARSE_OK) return uri_res;
 
-    const ParseHeaderResult version_res = parse_version(uri_res.next, end, req);
+    const ParseHeaderResult version_res = parse_version(uri_res.next, end, line);
     return version_res;
+}
+
+ParseHeaderResult parse_header_key(const char * cur, const char * end, Header * header) {
+    ParseHeaderResult res = {0};
+
+    if (cur >= end || !is_colon((u_char)*end)) {
+        set_header_error(&res, PARSE_BAD_REQUEST, cur);
+        return res;
+    }
+
+    size_t count = 0;
+    while (cur < end) {
+        if (!is_tchar(*cur)) {
+            set_header_error(&res, PARSE_BAD_REQUEST, cur);
+            return res;
+        }
+
+        if (count > MAX_HEADER_KEY_LEN - 1) { // account for \0
+            set_header_error(&res, PARSE_HEADER_TOO_LONG, cur);
+            return res;
+        }
+
+        header->key[count++] = *cur;
+        cur++;
+    }
+
+    header->key[count] = '\0';
+    res.status = PARSE_OK;
+    res.next = cur + 1; // skip over ':' where it ends in loop
+    return res;
+}
+
+ParseHeaderResult parse_header_value(const char * cur, const char * end, Header * header) {
+    ParseHeaderResult res = {0};
+    if (end - cur > MAX_HEADER_VALUE_LEN - 1) { // account for \0
+        set_header_error(&res, PARSE_HEADER_TOO_LONG, cur);
+        return res;
+    }
+
+    if (cur > end) { // empty field values are ok as per spec
+        set_header_error(&res, PARSE_BAD_REQUEST, cur);
+        return res;
+    }
+
+    cur = skip_ows(cur, end);
+    const char * trimmed_end = trim_trailing_ows(cur, end);
+    size_t count = 0;
+    while (cur < trimmed_end) {
+        if (!is_field_content_byte((u_char)*cur)) {
+            set_header_error(&res, PARSE_BAD_REQUEST, cur);
+            return res;
+        }
+
+        header->value[count++] = *cur;
+        cur++;
+    }
+
+    header->value[count] = '\0';
+    res.status = PARSE_OK;
+    res.next = end;
+    return res;
+}
+
+ParseHeaderResult parse_header_line(const char * cur, const char * end, HttpRequest * req) {
+    ParseHeaderResult res = {0};
+    if (cur >= end) {
+        set_header_error(&res, PARSE_BAD_REQUEST, cur);
+        return res;
+    }
+
+    Header header = {0};
+    res = parse_header_key(cur, find_colon(cur, end), &header);
+    if (res.status != PARSE_OK) return res;
+
+    res = parse_header_value(res.next, end, &header); // end points to crlf
+    if (res.status != PARSE_OK) return res;
+
+    if (req->header_count >= MAX_HEADERS) {
+        set_header_error(&res, PARSE_HEADER_TOO_LONG, cur);
+        return res;
+    }
+
+    req->headers[req->header_count++] = header;
+    res.status = PARSE_OK;
+    return res;
 }
 
 ParseHeaderResult parse_header(const char * buf, const size_t len, HttpRequest * req) {
     const char * cur = buf;
     const char * end = trim_trailing_ows(cur, buf + len);
-    ParseHeaderResult req_line_res = parse_request_line(cur, find_crlf(cur, end), req);
-    return req_line_res;
+    const ParseHeaderResult req_line_res = parse_request_line(cur, find_crlf(cur, end), &req->request_line);
+
+    if (req_line_res.status != PARSE_OK) return req_line_res;
+    assert(*req_line_res.next == '\r' || *req_line_res.next == '\n');
+    cur = req_line_res.next; // advance to crlf of first line
+    *req_line_res.next == '\r' ? cur += 2 : cur++; // skip over crlf to begin parsing headers
+
+    ParseHeaderResult header_res = {0};
+    while (1) {
+        if (cur + 2 <= end && memcmp(cur, "\r\n", 2) == 0) {
+            cur += 2;
+            break;
+        }
+
+        header_res = parse_header_line(cur, find_crlf(cur, end), req);
+        if (header_res.status != PARSE_OK) return header_res;
+        assert(*header_res.next == '\r' || *header_res.next == '\n');
+        cur = header_res.next;
+        *header_res.next == '\r' ? cur += 2 : cur++;
+    }
+
+    header_res.status = PARSE_OK;
+    header_res.next = cur;
+    return header_res;
 }
 
-// void parse_request(char * message, HttpRequest * req) {
-//     const char * line = strtok(message, "\r\n");
-//
-//     if (line != NULL) {
-//         char method_str[MAX_METHOD_LEN];
-//         sscanf(line, "%s %s %s", method_str, req->path, req->version);
-//         req->method = parse_http_method(method_str);
-//         line = strtok(NULL, "\r\n");
-//     }
-//
-//     req->header_count = 0;
-//
-//     while (line != NULL && strlen(line) > 0) {
-//         if (req->header_count >= MAX_HEADERS) break;
-//         const char * colon = strchr(line, ':');
-//
-//         if (colon != NULL) {
-//             size_t key_len = colon - line;
-//             size_t value_len = strlen(colon + 2);
-//
-//             strncpy(req->headers[req->header_count].key, line, key_len);
-//             req->headers[req->header_count].key[key_len] = '\0';
-//
-//             strncpy(req->headers[req->header_count].value, colon + 2, value_len);
-//             req->headers[req->header_count].value[value_len] = '\0';
-//
-//             req->header_count++;
-//         }
-//
-//         line = strtok(NULL, "\r\n");
-//     }
-// }
+void show_request_line(const HttpRequestLine * line) {
+    printf("%s %s %s\r\n", show_http_method(line->method), line->path, line->version);
+}
 
 void show_request(HttpRequest * req) {
-    printf("%s %s %s\r\n", show_http_method(req->method), req->path, req->version);
-
+    show_request_line(&req->request_line);
     for (int i = 0; i < req->header_count; i++) {
         printf("%s: %s\r\n", req->headers[i].key, req->headers[i].value);
     }
