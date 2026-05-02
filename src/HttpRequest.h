@@ -20,21 +20,25 @@ typedef enum {
     GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH, UNKNOWN
 } HttpMethod;
 
+HttpMethod parse_http_method(const char *s, size_t len);
+
+char* show_http_method(HttpMethod method);
+
 typedef struct {
     char key[MAX_HEADER_KEY_LEN];
     char value[MAX_HEADER_VALUE_LEN];
 } Header;
 
-HttpMethod parse_http_method(const char *s, size_t len);
-
-char* show_http_method(HttpMethod method);
-
-/* HTTP REQUEST */
 typedef struct {
     HttpMethod method;
     char path[MAX_PATH_LEN];
     char query[MAX_QUERY_LEN];
     char version[VERSION_LEN * 2];
+} HttpRequestLine;
+
+/* HTTP REQUEST */
+typedef struct {
+    HttpRequestLine request_line;
     Header headers[MAX_HEADERS];
     int header_count;
 } HttpRequest;
@@ -71,10 +75,10 @@ typedef struct {
 } ParseHeaderResult;
 
 // the following four methods are internal and exposed for testing only
-ParseHeaderResult parse_method(const char * cur, const char *end, HttpRequest * req);
-ParseHeaderResult parse_uri(const char * cur, const char *end, HttpRequest * req);
-ParseHeaderResult parse_version(const char * cur, const char *end, HttpRequest * req);
-ParseHeaderResult parse_request_line(const char * cur, const char *end, HttpRequest * req);
+ParseHeaderResult parse_method(const char * cur, const char *end, HttpRequestLine * line);
+ParseHeaderResult parse_uri(const char * cur, const char *end, HttpRequestLine * line);
+ParseHeaderResult parse_version(const char * cur, const char *end, HttpRequestLine * line);
+ParseHeaderResult parse_request_line(const char * cur, const char *end, HttpRequestLine * line);
 
 ParseHeaderResult parse_header(const char *buf, size_t len, HttpRequest *req);
 
