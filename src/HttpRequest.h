@@ -5,12 +5,12 @@
 #ifndef HTTPREQUEST_H
 #define HTTPREQUEST_H
 
+#include "HttpBody.h"
 #include "HttpHeaders.h"
 #include "HttpRequestLine.h"
 #include "ParseResult.h"
 #include "../lib/Dictionary.h"
 
-#define MAX_BODY_LEN (1024 * 1000)
 #define MAX_REASON_PHRASE_LEN 64
 
 /* HTTP REQUEST */
@@ -40,7 +40,6 @@ typedef struct {
 
 ReadHeaderResult recv_header(int fd, char *header_buf, ssize_t header_cap);
 ParseResult parse_header(const char *buf, size_t len, HttpRequest *req);
-ParseStatus parse_content_length(const char * val, size_t * out);
 
 /* CONTENT */
 typedef struct {

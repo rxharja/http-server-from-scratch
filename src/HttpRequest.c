@@ -74,21 +74,6 @@ ParseResult parse_request(const char * buf, const size_t len, HttpRequest * req)
     if (body_res.status != PARSE_OK) return body_res;
 }
 
-// Malformed: empty, non-digit, mixed, leading SP/HTAB, trailing SP, +/- signs, 0x10, 1.5
-ParseStatus parse_content_length(const char *val, size_t *out) {
-    if (*val == '\0') return PARSE_BAD_REQUEST;
-    size_t result = 0;
-    for (const char *c = val; *c; c++) {
-        if (!isdigit((unsigned char)*c)) return PARSE_BAD_REQUEST;
-        const size_t digit = *c - '0'; // 0 is 48 (0x30) in ascii
-        // result * 10 + digit > MAX_BODY_LEN rearranged
-        if (result > (MAX_BODY_LEN - digit) / 10) return PARSE_PAYLOAD_TOO_LARGE;
-        result = result * 10 + digit;
-    }
-    *out = result;
-    return PARSE_OK;
-}
-
 static void show_request_line(const HttpRequestLine * line) {
     printf("%s %s%s %s\n", show_http_method(line->method), line->path, line->query, line->version);
 }

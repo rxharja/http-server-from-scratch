@@ -13,7 +13,9 @@ add_executable(HttpServer src/main.c
         src/HttpHeaders.c
         src/HttpHeaders.h
         src/ParseResult.c
-        src/ParseResult.h)
+        src/ParseResult.h
+        src/HttpBody.c
+        src/HttpBody.h)
 
 add_executable(HttpServerTests tests/ParserTests.c
         src/HttpRequest.c src/HttpRequest.h
@@ -23,4 +25,6 @@ add_executable(HttpServerTests tests/ParserTests.c
         src/HttpHeaders.c
         src/HttpHeaders.h
         src/ParseResult.c
-        src/ParseResult.h)
+        src/ParseResult.h
+        src/HttpBody.c
+        src/HttpBody.h)

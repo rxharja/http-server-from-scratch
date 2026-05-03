@@ -21,6 +21,6 @@ const Header * get_header(const Header * headers, size_t header_count, const cha
 ParseResult parse_header_key(const char *cur, const char *end, Header *header);
 ParseResult parse_header_value(const char *cur, const char *end, Header *header);
 ParseResult parse_crlf(const char *cur, const char *end);
-ParseResult parse_header_line(const char *cur, const char *end, Header * headers, size_t * header_count);
+ParseResult parse_header_line(const char *cur, const char *end, Header * headers, size_t * count);
 
 #endif //HTTPSERVER_HTTPHEADERS_H
