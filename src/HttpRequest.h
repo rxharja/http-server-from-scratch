@@ -5,46 +5,23 @@
 #ifndef HTTPREQUEST_H
 #define HTTPREQUEST_H
 
-#define MAX_HEADERS 32
-#define MAX_METHOD_LEN 8
-#define MAX_PATH_LEN 2048
-#define MAX_QUERY_LEN 512
-#define VERSION_LEN 8
-#define MAX_HEADER_KEY_LEN 64
-#define MAX_HEADER_VALUE_LEN 256
-#define MAX_REASON_PHRASE_LEN 64
+#include "HttpHeaders.h"
+#include "HttpRequestLine.h"
+#include "ParseResult.h"
 #include "../lib/Dictionary.h"
 
-/* HTTP METHOD */
-typedef enum {
-    GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH, UNKNOWN
-} HttpMethod;
-
-HttpMethod parse_http_method(const char *s, size_t len);
-
-char* show_http_method(HttpMethod method);
-
-typedef struct {
-    char key[MAX_HEADER_KEY_LEN];
-    char value[MAX_HEADER_VALUE_LEN];
-} Header;
-
-typedef struct {
-    HttpMethod method;
-    char path[MAX_PATH_LEN];
-    char query[MAX_QUERY_LEN];
-    char version[VERSION_LEN * 2];
-} HttpRequestLine;
+#define MAX_BODY_LEN (1024 * 1000)
+#define MAX_REASON_PHRASE_LEN 64
 
 /* HTTP REQUEST */
 typedef struct {
     HttpRequestLine request_line;
     Header headers[MAX_HEADERS];
-    int header_count;
+    size_t header_count;
+    char body[MAX_BODY_LEN];
 } HttpRequest;
 
-void parse_request(char * message, HttpRequest * req);
-
+ParseResult parse_request(const char * buf, size_t len, HttpRequest * req);
 void show_request(const HttpRequest * req);
 
 /* READ HEADER */
@@ -62,25 +39,8 @@ typedef struct {
 } ReadHeaderResult;
 
 ReadHeaderResult recv_header(int fd, char *header_buf, ssize_t header_cap);
-
-/* PARSE HEADER */
-typedef enum {
-    PARSE_OK, PARSE_BAD_REQUEST, PARSE_URI_TOO_LONG, PARSE_HEADER_TOO_LONG, PARSE_VERSION_NOT_SUPPORTED
-  } ParseHeaderStatus;
-
-typedef struct {
-    ParseHeaderStatus status;
-    const char * error_position;
-    const char * next;
-} ParseHeaderResult;
-
-// the following four methods are internal and exposed for testing only
-ParseHeaderResult parse_method(const char * cur, const char *end, HttpRequestLine * line);
-ParseHeaderResult parse_uri(const char * cur, const char *end, HttpRequestLine * line);
-ParseHeaderResult parse_version(const char * cur, const char *end, HttpRequestLine * line);
-ParseHeaderResult parse_request_line(const char * cur, const char *end, HttpRequestLine * line);
-
-ParseHeaderResult parse_header(const char *buf, size_t len, HttpRequest *req);
+ParseResult parse_header(const char *buf, size_t len, HttpRequest *req);
+ParseStatus parse_content_length(const char * val, size_t * out);
 
 /* CONTENT */
 typedef struct {

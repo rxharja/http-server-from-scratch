@@ -8,6 +8,8 @@
 
 const char * find_crlf(const char * cur, const char * end);
 
+int is_crlf(const char * cur);
+
 int is_ows(unsigned char c);
 
 // advances cur past leading SP/HTAB; returns new position.

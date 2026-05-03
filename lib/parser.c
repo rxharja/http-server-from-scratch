@@ -16,6 +16,10 @@ const char *find_crlf(const char *cur, const char *end) {
     return end;
 }
 
+int is_crlf(const char * cur) {
+   return cur[0] == '\r' && cur[1] == '\n';
+}
+
 int is_ows(const unsigned char c) {
     return c == ' ' || c == '\t';
 }
@@ -27,7 +31,7 @@ int is_colon(const unsigned char c) {
 
 // returns end when no colon is found
 const char *find_colon(const char *cur, const char *end) {
-    while (cur + 1 < end) {
+    while (cur < end) {
         if (is_colon((unsigned char)*cur)) return cur;
         cur++;
     }
