@@ -55,13 +55,8 @@ ParseResult parse_request(const char * buf, const size_t len, HttpRequest * req)
         status = parse_transfer_encoding(req->headers[i].value, &coding);
     }
 
-    if (coding == TE_NONE && status == PARSE_OK) {
-        set_header_error(&req_res, status, buf);
-        return req_res;
-    }
-
     // parse content-length if no transfer encoding
-    if (coding == TE_UNSUPPORTED) {
+    if (coding == TE_UNSUPPORTED || status != PARSE_OK) {
         set_header_error(&req_res, status, buf);
         return req_res;
     }
