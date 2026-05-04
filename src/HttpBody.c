@@ -24,6 +24,8 @@ ParseStatus parse_content_length(const char *val, size_t *out) {
 }
 
 TransferCoding parse_te_token(const char * start, const char * end) {
+    const char *semi = memchr(start, ';', end - start);
+    if (semi) end = trim_trailing_ows(start, semi);
     if (ascii_ieq(start, "chunked")) return TE_CHUNKED;
     if (start == end) return TE_NONE;
     return TE_UNSUPPORTED;
