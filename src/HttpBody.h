@@ -19,4 +19,6 @@ ParseStatus parse_content_length(const char * val, size_t * out);
 
 ParseStatus parse_transfer_encoding(const char * val, TransferCoding * coding);
 
+ParseResult parse_req_body(const char * buf, size_t len, char * body);
+
 #endif //HTTPSERVER_HTTPBODY_H

@@ -41,4 +41,6 @@ int is_vchar(unsigned char c);
 // obs-text       = %x80-FF
 int is_field_content_byte(unsigned char c);
 
+int ascii_ieq(const char * a, const char * b);
+
 #endif //HTTPSERVER_PARSER_H

@@ -109,14 +109,7 @@ ParseResult parse_crlf(const char * cur, const char * end) {
 const Header * get_header(const Header * headers, const size_t count, const char * name) {
     for (int i = 0; i < count; i++) {
         const Header *header = &headers[i];
-        const char * a = header->key;
-        const char * b = name;
-        while (*a && *b) {
-            if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) break;
-            a++; b++;
-        }
-
-        if (!*a && !*b)return &headers[i];
+        if (ascii_ieq(header->key, name)) return &headers[i];
     }
 
     return NULL;

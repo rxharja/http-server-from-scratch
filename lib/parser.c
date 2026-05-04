@@ -89,3 +89,15 @@ int is_vchar(const unsigned char c) {
 int is_field_content_byte(const unsigned char c) {
     return is_ows(c) || is_vchar(c) || c >= 0x80;
 }
+
+
+/// Invariant ascii character comparison between two strings.
+/// Takes two strings and compares characters case-insensitively.
+int ascii_ieq(const char * a, const char * b) {
+    while (*a && *b) {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) break;
+        a++; b++;
+    }
+
+    return !*a && !*b;
+}

@@ -42,36 +42,49 @@ ParseResult parse_header(const char * buf, const size_t len, HttpRequest * req) 
     return header_res;
 }
 
-ParseResult parse_req_body(const char * buf, const size_t len, char * body) {
-    ParseResult res = {0};
-    res.status = PARSE_BAD_REQUEST;
-    res.error_position = buf;
-    return res;
-}
-
 ParseResult parse_request(const char * buf, const size_t len, HttpRequest * req) {
     ParseResult req_res = {0};
-    // main request and headers
     const ParseResult header_res = parse_header(buf, len, req);
     if (header_res.status != PARSE_OK) return header_res;
 
-    // if te exists and content-length, branch to c-e, if chunked, branch to receiving chunks, otherwise no body
-    const Header * te = get_header(req->headers, req->header_count, "Transfer-Encoding");
-    // find the content length header
-    const Header * ct_len = get_header(req->headers, req->header_count, "Content-Length");
-    if (!ct_len) {
+    // gzip
+    // chunked
+    TransferCoding coding = TE_NONE;
+    for (int i = 0; i < req->header_count; i++) {
+        if (!ascii_ieq(req->headers[i].key, "transfer-encoding")) continue;
+        if (coding == TE_UNSUPPORTED) break;
+        if (coding == TE_NONE) parse_transfer_encoding(req->headers[i].value, &coding);
+        else {
+            set_header_error(&req_res, PARSE_BAD_REQUEST, buf);
+            return req_res;
+        }
+    }
+
+    // parse content-length if no transfer encoding
+    if (coding == TE_UNSUPPORTED) {
         set_header_error(&req_res, PARSE_BAD_REQUEST, buf);
         return req_res;
     }
 
-    // parse the length of the body from the content length
-    size_t body_len = 0;
-    req_res.status = parse_content_length(ct_len->value, &body_len);
-    if (req_res.status != PARSE_OK) return req_res;
+    // TODO: implement chunking
+    if (coding == TE_CHUNKED) {
+        set_header_error(&req_res, PARSE_BAD_REQUEST, buf);
+        return req_res;
+    }
 
-    // load the body
+    const Header * ct_len_h = get_header(req->headers, req->header_count, "content-length");
+
+    // no C-E and no T-E = no body
+    if (!ct_len_h) {
+        req_res.status = PARSE_OK;
+        return req_res;
+    }
+
+    size_t body_len = 0;
+    req_res.status = parse_content_length(ct_len_h->value, &body_len);
+    if (req_res.status != PARSE_OK) return req_res;
     const ParseResult body_res = parse_req_body(header_res.next, body_len, req->body);
-    if (body_res.status != PARSE_OK) return body_res;
+    return body_res;
 }
 
 static void show_request_line(const HttpRequestLine * line) {
