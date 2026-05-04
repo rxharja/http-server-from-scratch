@@ -19,6 +19,8 @@ int is_colon(unsigned char c);
 
 const char *find_colon(const char *cur, const char *end);
 
+const char *trim_back_to_comma(const char *start, const char *end);
+
 // backs up end before SP/HTAB; returns new end.
 const char * trim_trailing_ows(const char * start, const char *end);
 

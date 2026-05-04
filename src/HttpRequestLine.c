@@ -27,24 +27,16 @@ char* show_http_method(const HttpMethod method) {
 
 ParseResult parse_method(const char * cur, const char *end, HttpRequestLine * line) {
     ParseResult res = {0};
-    if (cur >= end) {
-        set_header_error(&res, PARSE_BAD_REQUEST, cur);
-        return res;
-    }
-    if (*cur == ' ') {
-        set_header_error(&res, PARSE_BAD_REQUEST, cur);
-        return res;
-    }
+    set_header_error(&res, PARSE_BAD_REQUEST, cur);
+
+    if (cur >= end) return res;
+    if (*cur == ' ') return res;
     const char *sp = memchr(cur, ' ', end - cur);
-    if (!sp) {
-        set_header_error(&res, PARSE_BAD_REQUEST, cur);
-        return res;
-    }
+    if (!sp) return res;
+
     line->method = parse_http_method(cur, sp - cur);
-    if (line->method == UNKNOWN) {
-        set_header_error(&res, PARSE_BAD_REQUEST, cur);
-        return res;
-    }
+    if (line->method == UNKNOWN) return res;
+
     res.status = PARSE_OK;
     res.next = sp + 1;
     return res;
@@ -53,21 +45,14 @@ ParseResult parse_method(const char * cur, const char *end, HttpRequestLine * li
 
 ParseResult parse_uri(const char * cur, const char *end, HttpRequestLine * line) {
     ParseResult res = {0};
-    if (cur >= end) {
-        set_header_error(&res, PARSE_BAD_REQUEST, cur);
-        return res;
-    }
+    set_header_error(&res, PARSE_BAD_REQUEST, cur);
+
+    if (cur >= end) return res;
 
     const char * sp = memchr(cur, ' ', end - cur);
-    if (!sp) {
-        set_header_error(&res, PARSE_BAD_REQUEST, cur);
-        return res;
-    }
+    if (!sp) return res;
 
-    if (*cur != '/') {
-        set_header_error(&res, PARSE_BAD_REQUEST, cur);
-        return res;
-    }
+    if (*cur != '/') return res;
 
     size_t path_len = 0;
     size_t query_len = 0;
@@ -79,16 +64,8 @@ ParseResult parse_uri(const char * cur, const char *end, HttpRequestLine * line)
     while (cur + i < sp) {
         // only use this to check for characters
         const char c = cur[i++]; // assigns then increments
-
-        if ((unsigned char)c < 0x20 || (unsigned char)c >= 0x7F) {
-          set_header_error(&res, PARSE_BAD_REQUEST, cur + i - 1);
-          return res;
-        }
-
-        if (c == '#') {
-          set_header_error(&res, PARSE_BAD_REQUEST, cur + i - 1);
-          return res;
-        }
+        if ((unsigned char)c < 0x20 || (unsigned char)c >= 0x7F) return res;
+        if (c == '#') return res;
 
         if (!in_query && c == '?') {
             in_query = 1;
@@ -139,24 +116,15 @@ ParseResult parse_uri(const char * cur, const char *end, HttpRequestLine * line)
 
 ParseResult parse_version(const char * cur, const char *end, HttpRequestLine * line) {
     ParseResult res = {0};
-    if (end - cur != VERSION_LEN) {
-        set_header_error(&res, PARSE_BAD_REQUEST, cur);
-        return res;
-    }
-
-    if (memcmp("HTTP/", cur, 5) != 0) {
-        set_header_error(&res, PARSE_BAD_REQUEST, cur);
-        return res;
-    }
+    set_header_error(&res, PARSE_BAD_REQUEST, cur);
+    if (end - cur != VERSION_LEN) return res;
+    if (memcmp("HTTP/", cur, 5) != 0) return res;
 
     const char d1 = cur[5];
     const char period = cur[6];
     const char d2 = end[-1];
 
-    if (!isdigit(d1) || !isdigit(d2) || period != '.') {
-        set_header_error(&res, PARSE_BAD_REQUEST, cur);
-        return res;
-    }
+    if (!isdigit(d1) || !isdigit(d2) || period != '.') return res;
 
     const int valid_version = memcmp(&cur[5], "0.9", 3) == 0
                            || memcmp(&cur[5], "1.0", 3) == 0

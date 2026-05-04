@@ -47,17 +47,12 @@ ParseResult parse_request(const char * buf, const size_t len, HttpRequest * req)
     const ParseResult header_res = parse_header(buf, len, req);
     if (header_res.status != PARSE_OK) return header_res;
 
-    // gzip
-    // chunked
     TransferCoding coding = TE_NONE;
+    ParseStatus status = PARSE_OK;
     for (int i = 0; i < req->header_count; i++) {
+        if (coding == TE_UNSUPPORTED || status != PARSE_OK) break;
         if (!ascii_ieq(req->headers[i].key, "transfer-encoding")) continue;
-        if (coding == TE_UNSUPPORTED) break;
-        if (coding == TE_NONE) parse_transfer_encoding(req->headers[i].value, &coding);
-        else {
-            set_header_error(&req_res, PARSE_BAD_REQUEST, buf);
-            return req_res;
-        }
+        status = parse_transfer_encoding(req->headers[i].value, &coding);
     }
 
     // parse content-length if no transfer encoding
@@ -89,17 +84,6 @@ ParseResult parse_request(const char * buf, const size_t len, HttpRequest * req)
 
 static void show_request_line(const HttpRequestLine * line) {
     printf("%s %s%s %s\n", show_http_method(line->method), line->path, line->query, line->version);
-}
-
-static void show_headers(const Header * headers, const size_t header_count) {
-    for (int i = 0; i < header_count; i++) {
-        printf("%s: %s\n", headers[i].key, headers[i].value);
-    }
-}
-
-void show_request(const HttpRequest * req) {
-    show_request_line(&req->request_line);
-    show_headers(req->headers, req->header_count);
 }
 
 // TODO: blocking I/O, needs to handle EAGAIN/EWOULDBLOCK
@@ -135,4 +119,12 @@ ReadHeaderResult recv_header(const int fd, char *header_buf, const ssize_t heade
     }
 
     return res;
+}
+
+void show_request(const HttpRequest * req) {
+    printf("\n");
+    show_request_line(&req->request_line);
+    show_headers(req->headers, req->header_count);
+    printf("\n");
+    printf("%s\n", req->body);
 }

@@ -45,6 +45,11 @@ const char *skip_ows(const char *cur, const char *end) {
     return cur;
 }
 
+const char *trim_back_to_comma(const char *start, const char *end) {
+    while (start < end && (unsigned char)*end != ',') end--;
+    return end;
+}
+
 // backs up end before SP/HTAB; returns new end.
 const char *trim_trailing_ows(const char *start, const char *end) {
     while (start < end && is_ows((unsigned char)end[-1])) end--;

@@ -437,12 +437,13 @@ int main(void) {
         "GET /about?x=y HTTP/1.1\r\n"
         "Host: www.example.com\r\n"
         "Accept-Language: en-US\r\n"
-        "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)\r\n\r\n";
+        "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)\r\n"
+        "Transfer-Encoding: chunked\r\n"
+        "\r\n"
+        "Hello, World!";
 
     HttpRequest req = {0};
-
-    parse_header(req_body, 125, &req);
-
+    parse_request(req_body, 200, &req);
     show_request(&req);
 
     printf("\n%d/%d passed\n", total - failed, total);
