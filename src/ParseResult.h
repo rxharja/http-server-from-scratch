@@ -14,7 +14,7 @@ typedef enum {
     PARSE_HEADER_TOO_LONG,
     PARSE_VERSION_NOT_SUPPORTED,
     PARSE_PAYLOAD_TOO_LARGE,
-    PARSE
+    PARSE_NOT_IMPLEMENTED
   } ParseStatus;
 
 typedef struct {

@@ -57,7 +57,7 @@ ParseResult parse_request(const char * buf, const size_t len, HttpRequest * req)
 
     // parse content-length if no transfer encoding
     if (coding == TE_UNSUPPORTED) {
-        set_header_error(&req_res, PARSE_BAD_REQUEST, buf);
+        set_header_error(&req_res, status, buf);
         return req_res;
     }
 

@@ -45,7 +45,7 @@ ParseStatus parse_transfer_encoding(const char *val, TransferCoding * coding) {
 
         if (tok_start < tok_end) {
             *coding = parse_te_token(tok_start, tok_end);
-            if (*coding == TE_UNSUPPORTED) return PARSE_BAD_REQUEST;
+            if (*coding == TE_UNSUPPORTED) return PARSE_NOT_IMPLEMENTED;
             if (*coding == TE_CHUNKED) {
                 if (!chunked_found) chunked_found = 1;
                 else { *coding = TE_UNSUPPORTED; return PARSE_BAD_REQUEST; }

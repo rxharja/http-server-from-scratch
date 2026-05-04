@@ -177,6 +177,24 @@ static void expect_content_length(const char *label, const char *input,
     }
 }
 
+// parse_transfer_encoding helper.
+// Assumed signature: ParseStatus parse_transfer_encoding(const char *val, TransferCoding *out);
+// Where TransferCoding has at least: TE_NONE, TE_CHUNKED, TE_UNSUPPORTED.
+//   PARSE_OK + TE_CHUNKED      → list valid, chunked is the only coding.
+//   PARSE_OK + TE_UNSUPPORTED  → list valid, contains codings other than chunked
+//                                (server should respond 501 at the orchestrator level).
+//   PARSE_BAD_REQUEST          → list malformed: chunked not last, bad token, empty value.
+static void expect_transfer_encoding(const char *label, const char *input,
+                                     const ParseStatus want_status,
+                                     const TransferCoding want_te) {
+    TransferCoding out = TE_NONE;
+    const ParseStatus got = parse_transfer_encoding(input, &out);
+    check(label, got == want_status, "transfer_encoding status mismatch");
+    if (want_status == PARSE_OK || want_status == PARSE_NOT_IMPLEMENTED) {
+        check(label, out == want_te, "transfer_encoding output mismatch");
+    }
+}
+
 int main(void) {
     expect_method("Method - plain GET",    "GET /",     GET);
     expect_method("Method - plain POST",   "POST ",     POST);
@@ -432,6 +450,54 @@ int main(void) {
     // Should map to PARSE_PAYLOAD_TOO_LARGE (or whatever name you settle on).
     expect_content_length("CL - overflow size_t","999999999999999999999999999",
                                                             PARSE_PAYLOAD_TOO_LARGE, 0);
+
+    // parse_transfer_encoding — see helper comment for assumed signature.
+    // Recognition (case-insensitive per RFC 9110 §10.1.4).
+    expect_transfer_encoding("TE - chunked",            "chunked",          PARSE_OK,           TE_CHUNKED);
+    expect_transfer_encoding("TE - case Chunked",       "Chunked",          PARSE_OK,           TE_CHUNKED);
+    expect_transfer_encoding("TE - case CHUNKED",       "CHUNKED",          PARSE_OK,           TE_CHUNKED);
+    expect_transfer_encoding("TE - case mixed",         "cHuNkEd",          PARSE_OK,           TE_CHUNKED);
+
+    // Single non-chunked coding → unsupported (server returns 501 at orchestrator).
+    expect_transfer_encoding("TE - gzip alone",         "gzip",             PARSE_NOT_IMPLEMENTED,           TE_UNSUPPORTED);
+    expect_transfer_encoding("TE - deflate alone",      "deflate",          PARSE_NOT_IMPLEMENTED,           TE_UNSUPPORTED);
+    expect_transfer_encoding("TE - identity alone",     "identity",         PARSE_NOT_IMPLEMENTED,           TE_UNSUPPORTED);
+    expect_transfer_encoding("TE - compress alone",     "compress",         PARSE_NOT_IMPLEMENTED,           TE_UNSUPPORTED);
+
+    // Chunked last in a stacked list → spec-valid framing, but body content unsupported → 501.
+    expect_transfer_encoding("TE - gzip then chunked",  "gzip, chunked",    PARSE_NOT_IMPLEMENTED, TE_UNSUPPORTED);
+    expect_transfer_encoding("TE - 2 stacks chunked",   "gzip, deflate, chunked", PARSE_NOT_IMPLEMENTED, TE_UNSUPPORTED);
+
+    // Chunked NOT last → malformed framing per RFC 9112 §6.1 ("MUST apply chunked as the final transfer coding").
+    // Spec-strict: this is 400, distinct from "unsupported coding" → 501. If your current parser short-circuits
+    // on the first unsupported token regardless of position, these will fail until you scan the whole list
+    // before deciding malformed-vs-unsupported.
+    expect_transfer_encoding("TE - chunked then gzip",  "chunked, gzip",    PARSE_BAD_REQUEST,  TE_NONE);
+    expect_transfer_encoding("TE - chunked mid-list",   "chunked, gzip, deflate", PARSE_BAD_REQUEST, TE_NONE);
+
+    // RFC 9110 §5.6.1 — empty list elements MUST be ignored.
+    expect_transfer_encoding("TE - leading comma",      ",chunked",         PARSE_OK,           TE_CHUNKED);
+    expect_transfer_encoding("TE - trailing comma",     "chunked,",         PARSE_OK,           TE_CHUNKED);
+    expect_transfer_encoding("TE - double comma",       "chunked,,",        PARSE_OK,           TE_CHUNKED);
+    expect_transfer_encoding("TE - sparse list",        ", , ,chunked",     PARSE_OK,           TE_CHUNKED);
+
+    // OWS handling around commas.
+    expect_transfer_encoding("TE - SP after comma",     "gzip, chunked",    PARSE_NOT_IMPLEMENTED,           TE_UNSUPPORTED);
+    expect_transfer_encoding("TE - HTAB after comma",   "gzip,\tchunked",   PARSE_NOT_IMPLEMENTED,           TE_UNSUPPORTED);
+    expect_transfer_encoding("TE - SP before comma",    "gzip ,chunked",    PARSE_NOT_IMPLEMENTED,           TE_UNSUPPORTED);
+    expect_transfer_encoding("TE - SP both sides",      "gzip , chunked",   PARSE_NOT_IMPLEMENTED,           TE_UNSUPPORTED);
+
+    // Parameters (chunked carries none in practice, but the grammar allows them — must strip).
+    expect_transfer_encoding("TE - chunked w/ params",  "chunked;ext=val",  PARSE_OK,           TE_CHUNKED);
+    expect_transfer_encoding("TE - chunked OWS+params", "chunked ;ext=val", PARSE_OK,           TE_CHUNKED);
+    expect_transfer_encoding("TE - gzip w/ params last","gzip;q=0.5, chunked", PARSE_NOT_IMPLEMENTED, TE_UNSUPPORTED);
+
+    // Malformed inputs.
+    expect_transfer_encoding("TE - empty value",        "",                 PARSE_BAD_REQUEST,  TE_NONE);
+    expect_transfer_encoding("TE - all OWS",            "   ",              PARSE_BAD_REQUEST,  TE_NONE);
+    expect_transfer_encoding("TE - only commas",        ",,,",              PARSE_BAD_REQUEST,  TE_NONE);
+    expect_transfer_encoding("TE - bad token paren",    "(invalid)",        PARSE_BAD_REQUEST,  TE_NONE);
+    expect_transfer_encoding("TE - bad token slash",    "weird/coding",     PARSE_BAD_REQUEST,  TE_NONE);
 
     const char * req_body =
         "GET /about?x=y HTTP/1.1\r\n"
