@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.31)
+cmake_minimum_required(VERSION 3.30)
 project(HttpServer C)
 
 set(CMAKE_C_STANDARD 11)
@@ -15,7 +15,9 @@ add_executable(HttpServer src/main.c
         src/ParseResult.c
         src/ParseResult.h
         src/HttpBody.c
-        src/HttpBody.h)
+        src/HttpBody.h
+        src/Connection.c
+        src/Connection.h)
 
 add_executable(HttpServerTests tests/ParserTests.c
         src/HttpRequest.c src/HttpRequest.h

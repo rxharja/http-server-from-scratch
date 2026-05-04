@@ -32,5 +32,6 @@ ParseResult parse_method(const char * cur, const char *end, HttpRequestLine * li
 ParseResult parse_uri(const char * cur, const char *end, HttpRequestLine * line);
 ParseResult parse_version(const char * cur, const char *end, HttpRequestLine * line);
 ParseResult parse_request_line(const char * cur, const char *end, HttpRequestLine * line);
+void show_request_line(const HttpRequestLine * line);
 
 #endif //HTTP_SERVER_FROM_SCRATCH_HTTPREQUESTLINE_H

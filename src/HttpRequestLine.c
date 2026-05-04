@@ -5,6 +5,7 @@
 #include "HttpRequestLine.h"
 
 #include <ctype.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
 #include "../lib/parser.h"
@@ -152,3 +153,8 @@ ParseResult parse_request_line(const char * cur, const char *end, HttpRequestLin
     const ParseResult version_res = parse_version(uri_res.next, end, line);
     return version_res;
 }
+
+void show_request_line(const HttpRequestLine * line) {
+    printf("%s %s%s %s\n", show_http_method(line->method), line->path, line->query, line->version);
+}
+

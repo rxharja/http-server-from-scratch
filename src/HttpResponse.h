@@ -4,11 +4,11 @@
 
 #ifndef HTTPSERVER_HEADER_H
 #define HTTPSERVER_HEADER_H
-#include <stdio.h>
+#include "../lib/Dictionary.h"
 #include "HttpRequest.h"
 
 typedef struct {
-    char version[MAX_VERSION_LEN];
+    char version[VERSION_LEN];
     int statusCode;
     char reasonPhrase[MAX_REASON_PHRASE_LEN];
     Header headers[MAX_HEADERS];

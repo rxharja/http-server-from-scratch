@@ -7,7 +7,19 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
+
 #include "../lib/parser.h"
+
+ssize_t parse_int(const char * val) {
+    size_t result = 0;
+    for (const char *c = val; *c; c++) {
+        if (!isdigit((unsigned char)*c)) return -1;
+        const size_t digit = *c - '0'; // 0 is 48 (0x30) in ascii
+        // result * 10 + digit > MAX_BODY_LEN rearranged
+        if (result > (MAX_BODY_LEN - digit) / 10) return PARSE_PAYLOAD_TOO_LARGE;
+        result = result * 10 + digit;
+    }
+}
 
 // Malformed: empty, non-digit, mixed, leading SP/HTAB, trailing SP, +/- signs, 0x10, 1.5
 ParseStatus parse_content_length(const char *val, size_t *out) {
@@ -98,9 +110,7 @@ ParseStatus parse_transfer_encoding(const char *val, TransferCoding *coding) {
 
     // RFC 9112 §6.1: when non-chunked codings are stacked, chunked MUST be the final coding.
     // If chunked is present alongside others but isn't the last entry, the framing is malformed.
-    if (chunked_found && has_unsupported && chunked_position != total_non_empty - 1) {
-        return PARSE_BAD_REQUEST;
-    }
+    if (chunked_found && has_unsupported && chunked_position != total_non_empty - 1) return PARSE_BAD_REQUEST;
 
     if (has_unsupported) {
         *coding = TE_UNSUPPORTED;
@@ -109,13 +119,4 @@ ParseStatus parse_transfer_encoding(const char *val, TransferCoding *coding) {
 
     *coding = TE_CHUNKED;
     return PARSE_OK;
-}
-
-// Caller's contract: `buf` holds at least `len` valid bytes; `body` has room for `len` bytes.
-// HTTP bodies are opaque: do NOT assume NUL-termination, do NOT run text-parsers over them.
-ParseResult parse_req_body(const char *buf, const size_t len, char *body) {
-    ParseResult res = {0};
-    memcpy(body, buf, len);
-    res.status = PARSE_OK;
-    return res;
 }

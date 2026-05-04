@@ -79,7 +79,7 @@ static void expect_request_line(const char *label, const char *input, const Pars
 
 static void expect_status(const char *label, const char *input, const ParseStatus want) {
     HttpRequest r = {0};
-    const ParseResult res = parse_header(input, strlen(input), &r);
+    const ParseResult res = parse_request(input, strlen(input), &r);
     check(label, res.status == want, "status mismatch");
 }
 
@@ -87,7 +87,7 @@ static void expect_status(const char *label, const char *input, const ParseStatu
 static void expect_status_n(const char *label, const char *input, const size_t len,
                             const ParseStatus want) {
     HttpRequest r = {0};
-    const ParseResult res = parse_header(input, len, &r);
+    const ParseResult res = parse_request(input, len, &r);
     check(label, res.status == want, "status mismatch");
 }
 
@@ -509,7 +509,7 @@ int main(void) {
         "Hello, World!";
 
     HttpRequest req = {0};
-    parse_request(req_body, 200, &req);
+    handle_connection(req_body, 200, &req);
     show_request(&req);
 
     printf("\n%d/%d passed\n", total - failed, total);

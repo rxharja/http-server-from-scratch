@@ -9,7 +9,6 @@
 #include "HttpHeaders.h"
 #include "HttpRequestLine.h"
 #include "ParseResult.h"
-#include "../lib/Dictionary.h"
 
 #define MAX_REASON_PHRASE_LEN 64
 
@@ -21,25 +20,9 @@ typedef struct {
     char body[MAX_BODY_LEN];
 } HttpRequest;
 
-ParseResult parse_request(const char * buf, size_t len, HttpRequest * req);
 void show_request(const HttpRequest * req);
 
-/* READ HEADER */
-typedef enum {
-    READ_HEADER_OK = 0,
-    READ_HEADER_PEER_CLOSED,
-    READ_HEADER_TOO_LARGE,
-    READ_HEADER_IO_ERROR,
-} ReadHeaderStatus;
-
-typedef struct {
-    ReadHeaderStatus status;
-    ssize_t          total_received;
-    ssize_t          body_start;   // offset just past \r\n\r\n
-} ReadHeaderResult;
-
-ReadHeaderResult recv_header(int fd, char *header_buf, ssize_t header_cap);
-ParseResult parse_header(const char *buf, size_t len, HttpRequest *req);
+ParseResult parse_request(const char *buf, size_t len, HttpRequest *req);
 
 /* CONTENT */
 typedef struct {
