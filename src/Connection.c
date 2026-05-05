@@ -10,14 +10,13 @@
 #include <string.h>
 #include <unistd.h>
 #include <asm-generic/errno-base.h>
-#include <sys/socket.h>
 #include "HttpRequest.h"
 #include "ParseResult.h"
 #include "../lib/parser.h"
 
 struct addrinfo;
 
-int get_addr_info(const struct addrinfo **serv_info, const char * port) {
+int get_addr_info(struct addrinfo **serv_info, const char * port) {
     struct addrinfo hints = {0};
     int rv;
 
@@ -158,7 +157,7 @@ ParseResult handle_connection(const int fd) {
     ParseResult req_res = {0};
 
     HttpRequest *req = malloc(sizeof(HttpRequest));
-    char * buf = malloc(sizeof(8192));
+    char * buf = malloc(8192 * sizeof(char));
 
     const ReadHeaderResult header_res = recv_header(fd, buf, 8192);
     if (header_res.status == READ_HEADER_PEER_CLOSED) close(fd); // maybe send 400 here
@@ -178,13 +177,13 @@ ParseResult handle_connection(const int fd) {
 
     // parse content-length if no transfer encoding
     if (coding == TE_UNSUPPORTED || status != PARSE_OK) {
-        set_header_error(&req_res, status, buf);
+        set_parse_error(&req_res, status, buf);
         return req_res;
     }
 
     // TODO: implement chunking
     if (coding == TE_CHUNKED) {
-        set_header_error(&req_res, PARSE_BAD_REQUEST, buf);
+        set_parse_error(&req_res, PARSE_BAD_REQUEST, buf);
         return req_res;
     }
 
@@ -193,11 +192,14 @@ ParseResult handle_connection(const int fd) {
     // no C-E and no T-E = no body
     if (!ct_len_h) {
         req_res.status = PARSE_OK;
+        show_request(req);
+        free(req);
+        free(buf);
         return req_res;
     }
 
     size_t body_len = 0;
-    req_res.status = parse_content_length(ct_len_h->value, &body_len);
+    req_res.status = parse_uint(ct_len_h->value, strlen(ct_len_h->value), 10, MAX_BODY_LEN, &body_len);
     if (req_res.status != PARSE_OK) return req_res;
     const ReadBodyResult body_res = recv_body(
         fd,
@@ -208,6 +210,9 @@ ParseResult handle_connection(const int fd) {
 
     if (body_res.status == PARSE_OK) {
         req_res.status = PARSE_OK;
+        show_request(req);
+        free(req);
+        free(buf);
         return req_res;
     }
 

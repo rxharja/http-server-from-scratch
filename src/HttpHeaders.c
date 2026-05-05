@@ -11,7 +11,7 @@
 
 ParseResult parse_header_key(const char * cur, const char * end, Header * header) {
     ParseResult res = {0};
-    set_header_error(&res, PARSE_BAD_REQUEST, cur);
+    set_parse_error(&res, PARSE_BAD_REQUEST, cur);
 
     if (cur >= end || !is_colon((unsigned char)*end)) return res;
 
@@ -20,7 +20,7 @@ ParseResult parse_header_key(const char * cur, const char * end, Header * header
         if (!is_tchar(*cur)) return res;
 
         if (count >= MAX_HEADER_KEY_LEN - 1) { // account for \0
-            set_header_error(&res, PARSE_HEADER_KEY_TOO_LONG, cur);
+            set_parse_error(&res, PARSE_HEADER_KEY_TOO_LONG, cur);
             return res;
         }
 
@@ -36,10 +36,10 @@ ParseResult parse_header_key(const char * cur, const char * end, Header * header
 
 ParseResult parse_header_value(const char * cur, const char * end, Header * header) {
     ParseResult res = {0};
-    set_header_error(&res, PARSE_BAD_REQUEST, cur);
+    set_parse_error(&res, PARSE_BAD_REQUEST, cur);
 
     if (end - cur > MAX_HEADER_VALUE_LEN - 1) { // account for \0
-        set_header_error(&res, PARSE_HEADER_VALUE_TOO_LONG, cur);
+        set_parse_error(&res, PARSE_HEADER_VALUE_TOO_LONG, cur);
         return res;
     }
 
@@ -63,7 +63,7 @@ ParseResult parse_header_value(const char * cur, const char * end, Header * head
 ParseResult parse_header_line(const char * cur, const char * end, Header * headers, size_t * count) {
     ParseResult res = {0};
     if (cur >= end) {
-        set_header_error(&res, PARSE_BAD_REQUEST, cur);
+        set_parse_error(&res, PARSE_BAD_REQUEST, cur);
         return res;
     }
 
@@ -75,7 +75,7 @@ ParseResult parse_header_line(const char * cur, const char * end, Header * heade
     if (res.status != PARSE_OK) return res;
 
     if (*count >= MAX_HEADERS) {
-        set_header_error(&res, PARSE_HEADER_TOO_LONG, cur);
+        set_parse_error(&res, PARSE_HEADER_TOO_LONG, cur);
         return res;
     }
 
@@ -92,7 +92,7 @@ ParseResult parse_crlf(const char * cur, const char * end) {
         return res;
     }
 
-    set_header_error(&res, PARSE_BAD_REQUEST, cur);
+    set_parse_error(&res, PARSE_BAD_REQUEST, cur);
     return res;
 }
 

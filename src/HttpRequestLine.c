@@ -28,7 +28,7 @@ char* show_http_method(const HttpMethod method) {
 
 ParseResult parse_method(const char * cur, const char *end, HttpRequestLine * line) {
     ParseResult res = {0};
-    set_header_error(&res, PARSE_BAD_REQUEST, cur);
+    set_parse_error(&res, PARSE_BAD_REQUEST, cur);
 
     if (cur >= end) return res;
     if (*cur == ' ') return res;
@@ -46,7 +46,7 @@ ParseResult parse_method(const char * cur, const char *end, HttpRequestLine * li
 
 ParseResult parse_uri(const char * cur, const char *end, HttpRequestLine * line) {
     ParseResult res = {0};
-    set_header_error(&res, PARSE_BAD_REQUEST, cur);
+    set_parse_error(&res, PARSE_BAD_REQUEST, cur);
 
     if (cur >= end) return res;
 
@@ -78,23 +78,23 @@ ParseResult parse_uri(const char * cur, const char *end, HttpRequestLine * line)
         }
 
         if (*len_ptr >= cap - 1) {
-            set_header_error(&res, PARSE_URI_TOO_LONG, cur + i - 1);
+            set_parse_error(&res, PARSE_URI_TOO_LONG, cur + i - 1);
             return res;
         }
 
         if (c == '%') {
             if (cur + i + 2 > sp) {
-                set_header_error(&res, PARSE_BAD_REQUEST, cur + i - 1);
+                set_parse_error(&res, PARSE_BAD_REQUEST, cur + i - 1);
                 return res;
             }
 
             if (!is_hex((u_char)cur[i]) || !is_hex((u_char)cur[i + 1])) {
-                set_header_error(&res, PARSE_BAD_REQUEST, cur + i - 1);
+                set_parse_error(&res, PARSE_BAD_REQUEST, cur + i - 1);
                 return res;
             }
 
             if (*len_ptr + 3 > cap - 1) {
-                set_header_error(&res, PARSE_URI_TOO_LONG, cur + i - 1);
+                set_parse_error(&res, PARSE_URI_TOO_LONG, cur + i - 1);
                 return res;
             }
 
@@ -117,7 +117,7 @@ ParseResult parse_uri(const char * cur, const char *end, HttpRequestLine * line)
 
 ParseResult parse_version(const char * cur, const char *end, HttpRequestLine * line) {
     ParseResult res = {0};
-    set_header_error(&res, PARSE_BAD_REQUEST, cur);
+    set_parse_error(&res, PARSE_BAD_REQUEST, cur);
     if (end - cur != VERSION_LEN) return res;
     if (memcmp("HTTP/", cur, 5) != 0) return res;
 
@@ -132,7 +132,7 @@ ParseResult parse_version(const char * cur, const char *end, HttpRequestLine * l
                            || memcmp(&cur[5], "1.1", 3) == 0;
 
     if (!valid_version) {
-        set_header_error(&res, PARSE_VERSION_NOT_SUPPORTED, cur);
+        set_parse_error(&res, PARSE_VERSION_NOT_SUPPORTED, cur);
         return res;
     }
 

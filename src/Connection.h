@@ -5,8 +5,9 @@
 #ifndef HTTPSERVER_CONNECTION_H
 #define HTTPSERVER_CONNECTION_H
 #include <stdio.h>
+#include <netdb.h>
+#include <sys/socket.h>
 #include "HttpRequest.h"
-#include "ParseResult.h"
 
 /* READ HEADER */
 typedef enum {
@@ -36,7 +37,7 @@ typedef struct {
     size_t          next_req_offset;
 } ReadBodyResult;
 
-int get_addr_info(const struct addrinfo **serv_info, const char * port);
+int get_addr_info(struct addrinfo **serv_info, const char * port);
 
 int bind_socket(const struct addrinfo * servinfo);
 

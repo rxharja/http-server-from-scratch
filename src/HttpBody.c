@@ -10,30 +10,78 @@
 
 #include "../lib/parser.h"
 
-ssize_t parse_int(const char * val) {
-    size_t result = 0;
-    for (const char *c = val; *c; c++) {
-        if (!isdigit((unsigned char)*c)) return -1;
-        const size_t digit = *c - '0'; // 0 is 48 (0x30) in ascii
-        // result * 10 + digit > MAX_BODY_LEN rearranged
-        if (result > (MAX_BODY_LEN - digit) / 10) return PARSE_PAYLOAD_TOO_LARGE;
-        result = result * 10 + digit;
-    }
+ParseStatus parse_content_length(const char *val, size_t *out) {
+    return parse_uint(val, strlen(val), 10, MAX_BODY_LEN, out);
 }
 
-// Malformed: empty, non-digit, mixed, leading SP/HTAB, trailing SP, +/- signs, 0x10, 1.5
-ParseStatus parse_content_length(const char *val, size_t *out) {
-    if (*val == '\0') return PARSE_BAD_REQUEST;
-    size_t result = 0;
-    for (const char *c = val; *c; c++) {
-        if (!isdigit((unsigned char)*c)) return PARSE_BAD_REQUEST;
-        const size_t digit = *c - '0'; // 0 is 48 (0x30) in ascii
-        // result * 10 + digit > MAX_BODY_LEN rearranged
-        if (result > (MAX_BODY_LEN - digit) / 10) return PARSE_PAYLOAD_TOO_LARGE;
-        result = result * 10 + digit;
+// 5\r\nABCDE\r\n0\r\n\r\n
+// 01 2 345678 9 01 2 3 4 --- 14
+ChunkResult parse_chunk(const char * buf, const char * end, char * dest) {
+    ChunkResult res = {0};
+    const char * cur = buf;
+
+    // parse length and handle ext
+    size_t len;
+    const char * crlf = find_crlf(cur, end);
+    if (!crlf) {
+        set_parse_error(&res.parse_result, PARSE_BAD_REQUEST, cur);
+        return res;
     }
-    *out = result;
-    return PARSE_OK;
+    const char *size_end = memchr(cur, ';', crlf - cur);
+    if (!size_end) size_end = crlf;
+    res.parse_result.status = parse_uint(cur, size_end - cur, 16, MAX_BODY_LEN, &len);
+    if (res.parse_result.status != PARSE_OK) return res;
+
+    cur = crlf + 2; //advance past crlf
+    if (len == 0) {
+        res.parse_result.status = PARSE_OK;
+        res.parse_result.next = cur;
+        res.chunk_size = 0;
+        return res;
+    }
+
+    // parse content
+    if (cur + len + 2 > end || cur[len] != '\r' || cur[len + 1] != '\n' ) {
+        set_parse_error(&res.parse_result, PARSE_BAD_REQUEST, cur);
+        return res;
+    }
+
+    memcpy(dest, cur, len);
+    res.parse_result.status = PARSE_OK;
+    res.parse_result.next = cur + len + 2;
+    res.chunk_size = len;
+    return res;
+}
+
+// 5\r\nABCDE\r\n0\r\n\r\n
+ParseResult body_dechunk(const char * buf, const char * end, char * dest) {
+    const char * cur = buf;
+    size_t total = 0;
+    ChunkResult c = {0};
+    while (1) {
+        c = parse_chunk(cur, end, dest + total);
+        if (c.parse_result.status != PARSE_OK) return c.parse_result;
+        cur = c.parse_result.next;
+        if (c.chunk_size == 0) break;
+        total += c.chunk_size;
+    }
+
+    while (1) {
+        if (cur + 2 > end) {
+            set_parse_error(&c.parse_result, PARSE_BAD_REQUEST, cur);
+            return c.parse_result;
+        }
+
+        if (cur[0] == '\r' && cur[1] == '\n') { cur += 2; break; }   // body terminator
+        const char *crlf = find_crlf(cur, end);
+        if (!crlf) {
+            set_parse_error(&c.parse_result, PARSE_BAD_REQUEST, cur);
+            return c.parse_result;
+        }
+        cur = crlf + 2;
+    }
+
+    return (ParseResult){ .next = cur, .status = PARSE_OK };
 }
 
 // Case-insensitive equality of bytes [start, start+len) against the literal "chunked".

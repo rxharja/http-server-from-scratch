@@ -4,6 +4,7 @@
 
 #ifndef HTTPSERVER_PARSERESULT_H
 #define HTTPSERVER_PARSERESULT_H
+#include <stddef.h>
 
 typedef enum {
     PARSE_OK,
@@ -23,6 +24,11 @@ typedef struct {
     const char * next;
 } ParseResult;
 
-void set_header_error(ParseResult *res, ParseStatus status, const char * pos);
+
+ParseStatus parse_uint(const char *s, size_t len, int base, size_t max, size_t *out);
+
+int digit_value(unsigned char c, int base);
+
+void set_parse_error(ParseResult *res, ParseStatus status, const char * pos);
 
 #endif //HTTPSERVER_PARSERESULT_H

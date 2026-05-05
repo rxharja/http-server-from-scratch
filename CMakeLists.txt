@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD 11)
 
 add_executable(HttpServer src/main.c
         src/HttpRequest.c src/HttpRequest.h
-        src/HttpResponse.c src/HttpResponse.h
+#        src/HttpResponse.c src/HttpResponse.h
         lib/linked_node_macro.h lib/Dictionary.c lib/Dictionary.h
         lib/parser.c lib/parser.h
         src/HttpRequestLine.c

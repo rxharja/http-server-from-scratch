@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "../src/HttpRequest.h"
+#include "../src/Connection.h"
 
 static int total = 0, failed = 0;
 
@@ -193,6 +194,79 @@ static void expect_transfer_encoding(const char *label, const char *input,
     if (want_status == PARSE_OK || want_status == PARSE_NOT_IMPLEMENTED) {
         check(label, out == want_te, "transfer_encoding output mismatch");
     }
+}
+
+// digit_value — single-character digit-to-int converter.
+// Returns 0..base-1 on a valid digit (case-insensitive for hex), -1 otherwise.
+static void expect_digit_value(const char *label, const unsigned char c,
+                               const int base, const int want) {
+    const int got = digit_value(c, base);
+    check(label, got == want, "digit_value mismatch");
+}
+
+// parse_uint — strict number parser with explicit length, base, and overflow guard.
+// On PARSE_OK the parsed value is written to *out; otherwise we don't read it.
+static void expect_parse_uint(const char *label, const char *input, const size_t len,
+                              const int base, const size_t max,
+                              const ParseStatus want_status, const size_t want_value) {
+    size_t out = 0;
+    const ParseStatus got = parse_uint(input, len, base, max, &out);
+    check(label, got == want_status, "parse_uint status mismatch");
+    if (want_status == PARSE_OK) {
+        check(label, out == want_value, "parse_uint value mismatch");
+    }
+}
+
+// parse_chunk happy path — checks status, chunk_size, decoded data, and consumed bytes.
+// want_data may be NULL when want_size is 0 (last-chunk).
+static void expect_parse_chunk_ok(const char *label,
+                                  const char *input, const size_t input_len,
+                                  const size_t want_size, const char *want_data,
+                                  const size_t want_consumed) {
+    char dest[1024] = {0};
+    const ChunkResult res = parse_chunk(input, input + input_len, dest);
+    check(label, res.parse_result.status == PARSE_OK, "parse_chunk: not OK");
+    check(label, res.chunk_size == want_size, "parse_chunk: chunk_size mismatch");
+    if (want_size > 0 && want_data) {
+        check(label, memcmp(dest, want_data, want_size) == 0,
+              "parse_chunk: data mismatch");
+    }
+    check(label, res.parse_result.next == input + want_consumed,
+          "parse_chunk: consumed mismatch");
+}
+
+// parse_chunk error path — only inspects the status.
+static void expect_parse_chunk_err(const char *label,
+                                   const char *input, const size_t input_len,
+                                   const ParseStatus want_status) {
+    char dest[1024] = {0};
+    const ChunkResult res = parse_chunk(input, input + input_len, dest);
+    check(label, res.parse_result.status == want_status, "parse_chunk: status mismatch");
+}
+
+// body_dechunk happy path — checks status, decoded payload, and that the parser
+// consumed the entire buffer (next == input + input_len).
+// want_decoded may be NULL when want_decoded_len is 0 (empty body / trailers-only).
+static void expect_dechunk_ok(const char *label,
+                              const char *input, const size_t input_len,
+                              const char *want_decoded, const size_t want_decoded_len) {
+    char dest[4096] = {0};
+    const ParseResult res = body_dechunk(input, input + input_len, dest);
+    check(label, res.status == PARSE_OK, "body_dechunk: not OK");
+    if (want_decoded_len > 0 && want_decoded) {
+        check(label, memcmp(dest, want_decoded, want_decoded_len) == 0,
+              "body_dechunk: data mismatch");
+    }
+    check(label, res.next == input + input_len, "body_dechunk: consumed mismatch");
+}
+
+// body_dechunk error path — status only.
+static void expect_dechunk_err(const char *label,
+                               const char *input, const size_t input_len,
+                               const ParseStatus want_status) {
+    char dest[4096] = {0};
+    const ParseResult res = body_dechunk(input, input + input_len, dest);
+    check(label, res.status == want_status, "body_dechunk: status mismatch");
 }
 
 int main(void) {
@@ -499,17 +573,129 @@ int main(void) {
     expect_transfer_encoding("TE - bad token paren",    "(invalid)",        PARSE_BAD_REQUEST,  TE_NONE);
     expect_transfer_encoding("TE - bad token slash",    "weird/coding",     PARSE_BAD_REQUEST,  TE_NONE);
 
+    // digit_value — character-to-digit conversion with base awareness.
+    expect_digit_value("DV - decimal '0'",          '0', 10,  0);
+    expect_digit_value("DV - decimal '5'",          '5', 10,  5);
+    expect_digit_value("DV - decimal '9'",          '9', 10,  9);
+    expect_digit_value("DV - decimal 'a' rejected", 'a', 10, -1);
+    expect_digit_value("DV - decimal 'A' rejected", 'A', 10, -1);
+    expect_digit_value("DV - just below '0' (/)",   '/', 10, -1);
+    expect_digit_value("DV - just above '9' (:)",   ':', 10, -1);
+    expect_digit_value("DV - hex '0'",              '0', 16,  0);
+    expect_digit_value("DV - hex '9'",              '9', 16,  9);
+    expect_digit_value("DV - hex 'a' is 10",        'a', 16, 10);
+    expect_digit_value("DV - hex 'A' is 10",        'A', 16, 10);
+    expect_digit_value("DV - hex 'f' is 15",        'f', 16, 15);
+    expect_digit_value("DV - hex 'F' is 15",        'F', 16, 15);
+    expect_digit_value("DV - hex 'g' rejected",     'g', 16, -1);
+    expect_digit_value("DV - hex 'G' rejected",     'G', 16, -1);
+    expect_digit_value("DV - hex SP rejected",      ' ', 16, -1);
+    expect_digit_value("DV - hex '!' rejected",     '!', 16, -1);
+
+    // parse_uint — generalized strict integer parser.
+    // Decimal happy paths.
+    expect_parse_uint("PU - dec '0'",                "0",     1, 10, MAX_BODY_LEN, PARSE_OK, 0);
+    expect_parse_uint("PU - dec '5'",                "5",     1, 10, MAX_BODY_LEN, PARSE_OK, 5);
+    expect_parse_uint("PU - dec '100'",              "100",   3, 10, MAX_BODY_LEN, PARSE_OK, 100);
+    expect_parse_uint("PU - dec '12345'",            "12345", 5, 10, MAX_BODY_LEN, PARSE_OK, 12345);
+    expect_parse_uint("PU - dec leading zeros",      "0005",  4, 10, MAX_BODY_LEN, PARSE_OK, 5);
+
+    // Hex happy paths (case-insensitive).
+    expect_parse_uint("PU - hex '0'",                "0",   1, 16, MAX_BODY_LEN, PARSE_OK, 0);
+    expect_parse_uint("PU - hex 'a' is 10",          "a",   1, 16, MAX_BODY_LEN, PARSE_OK, 10);
+    expect_parse_uint("PU - hex 'F' is 15",          "F",   1, 16, MAX_BODY_LEN, PARSE_OK, 15);
+    expect_parse_uint("PU - hex 'FF' is 255",        "FF",  2, 16, MAX_BODY_LEN, PARSE_OK, 255);
+    expect_parse_uint("PU - hex 'ff' is 255",        "ff",  2, 16, MAX_BODY_LEN, PARSE_OK, 255);
+    expect_parse_uint("PU - hex 'Ff' mixed case",    "Ff",  2, 16, MAX_BODY_LEN, PARSE_OK, 255);
+    expect_parse_uint("PU - hex '1A' is 26",         "1A",  2, 16, MAX_BODY_LEN, PARSE_OK, 26);
+    expect_parse_uint("PU - hex '1a' is 26",         "1a",  2, 16, MAX_BODY_LEN, PARSE_OK, 26);
+
+    // Error paths — the spec is strict; these have no interpretation.
+    expect_parse_uint("PU - empty input",            "",    0, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - hex letter in dec",      "1A",  2, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - non-digit byte",         "5x",  2, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - leading SP",             " 5",  2, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - leading HTAB",           "\t5", 2, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - leading + sign",         "+5",  2, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - leading - sign",         "-5",  2, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - 0x prefix in hex",       "0x5", 3, 16, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - hex 'G' rejected",       "G",   1, 16, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - decimal point",          "1.5", 3, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+
+    // Overflow — value exceeds the cap. MAX_BODY_LEN = 1,024,000.
+    expect_parse_uint("PU - dec overflow",  "1024001",        7, 10, MAX_BODY_LEN, PARSE_PAYLOAD_TOO_LARGE, 0);
+    expect_parse_uint("PU - hex overflow",  "fffff",          5, 16, MAX_BODY_LEN, PARSE_PAYLOAD_TOO_LARGE, 0);
+    expect_parse_uint("PU - dec at boundary", "1024000",      7, 10, MAX_BODY_LEN, PARSE_OK, 1024000);
+
+    // parse_chunk — single-chunk grammar: chunk-size [chunk-ext] CRLF chunk-data CRLF
+    //               OR last-chunk: 1*"0" [chunk-ext] CRLF (no data, no trailing CRLF).
+
+    // Happy paths.
+    expect_parse_chunk_ok("PChunk - simple 5-byte",      "5\r\nABCDE\r\n",            10,  5, "ABCDE",  10);
+    expect_parse_chunk_ok("PChunk - single byte",        "1\r\nA\r\n",                  6,  1, "A",      6);
+    expect_parse_chunk_ok("PChunk - hex 1A=26",
+        "1A\r\n12345678901234567890123456\r\n",                                         32, 26, "12345678901234567890123456", 32);
+    expect_parse_chunk_ok("PChunk - hex lowercase 1a",
+        "1a\r\n12345678901234567890123456\r\n",                                         32, 26, "12345678901234567890123456", 32);
+    expect_parse_chunk_ok("PChunk - last-chunk",         "0\r\n",                       3,  0, NULL,     3);
+    expect_parse_chunk_ok("PChunk - last-chunk multi-0", "00\r\n",                      4,  0, NULL,     4);
+    expect_parse_chunk_ok("PChunk - chunk-ext on data",  "5;name=val\r\nABCDE\r\n",    19,  5, "ABCDE", 19);
+    expect_parse_chunk_ok("PChunk - chunk-ext on last",  "0;name=val\r\n",             12,  0, NULL,    12);
+    expect_parse_chunk_ok("PChunk - embedded CRLF data", "5\r\nA\r\nXY\r\n",           10,  5, "A\r\nXY", 10);
+
+    // Error paths.
+    expect_parse_chunk_err("PChunk - missing size CRLF",     "5",                  1, PARSE_BAD_REQUEST);
+    expect_parse_chunk_err("PChunk - non-hex size",          "G\r\n",              3, PARSE_BAD_REQUEST);
+    expect_parse_chunk_err("PChunk - empty size",            "\r\n",               2, PARSE_BAD_REQUEST);
+    expect_parse_chunk_err("PChunk - ext only no size",      ";ext=v\r\n",         8, PARSE_BAD_REQUEST);
+    expect_parse_chunk_err("PChunk - data shorter",          "5\r\nABC",           6, PARSE_BAD_REQUEST);
+    expect_parse_chunk_err("PChunk - missing trail CRLF",    "5\r\nABCDE",         8, PARSE_BAD_REQUEST);
+    expect_parse_chunk_err("PChunk - wrong byte after data", "5\r\nABCDEXX",      10, PARSE_BAD_REQUEST);
+
+    // body_dechunk — full chunked-body grammar:
+    //   *chunk last-chunk trailer-section CRLF
+
+    // Happy paths.
+    expect_dechunk_ok("Dechunk - empty body",
+        "0\r\n\r\n",                                            5, NULL,        0);
+    expect_dechunk_ok("Dechunk - single chunk",
+        "5\r\nABCDE\r\n0\r\n\r\n",                             15, "ABCDE",     5);
+    expect_dechunk_ok("Dechunk - two chunks",
+        "5\r\nABCDE\r\n3\r\nXYZ\r\n0\r\n\r\n",                 23, "ABCDEXYZ",  8);
+    expect_dechunk_ok("Dechunk - one trailer",
+        "5\r\nABCDE\r\n0\r\nFoo: bar\r\n\r\n",                 25, "ABCDE",     5);
+    expect_dechunk_ok("Dechunk - multi trailers",
+        "0\r\nA: 1\r\nB: 2\r\n\r\n",                           17, NULL,        0);
+    expect_dechunk_ok("Dechunk - chunk-ext throughout",
+        "5;a=b\r\nABCDE\r\n0;c=d\r\n\r\n",                     23, "ABCDE",     5);
+    expect_dechunk_ok("Dechunk - embedded CRLF in data",
+        "5\r\nA\r\nXY\r\n0\r\n\r\n",                           15, "A\r\nXY",   5);
+
+    // Error paths.
+    expect_dechunk_err("Dechunk - missing terminator",
+        "5\r\nABCDE\r\n0\r\n",                                 13, PARSE_BAD_REQUEST);
+    expect_dechunk_err("Dechunk - trailer line no CRLF",
+        "0\r\nFoo: bar",                                       11, PARSE_BAD_REQUEST);
+    expect_dechunk_err("Dechunk - non-hex size mid-body",
+        "5\r\nABCDE\r\nG\r\nXYZ\r\n0\r\n\r\n",                 23, PARSE_BAD_REQUEST);
+    expect_dechunk_err("Dechunk - truncated chunk",
+        "5\r\nABC",                                             6, PARSE_BAD_REQUEST);
+
+    // parse_content_length now thin-wraps parse_uint with base=10 — quick sanity tie-in.
+    expect_content_length("CL via PU - small",  "100", PARSE_OK, 100);
+    expect_content_length("CL via PU - empty",  "",    PARSE_BAD_REQUEST, 0);
+
     const char * req_body =
         "GET /about?x=y HTTP/1.1\r\n"
         "Host: www.example.com\r\n"
         "Accept-Language: en-US\r\n"
         "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)\r\n"
-        "Transfer-Encoding: chunked\r\n"
+        "Content-Length: 12"
         "\r\n"
         "Hello, World!";
 
     HttpRequest req = {0};
-    handle_connection(req_body, 200, &req);
+    parse_request(req_body, 170, &req);
     show_request(&req);
 
     printf("\n%d/%d passed\n", total - failed, total);

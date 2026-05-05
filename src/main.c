@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
-#include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -10,9 +9,7 @@
 #include <arpa/inet.h>
 #include <sys/wait.h>
 #include <signal.h>
-
 #include "Connection.h"
-#include "HttpResponse.h"
 #include "HttpRequest.h"
 #include "../lib/Dictionary.h"
 
@@ -43,8 +40,6 @@ int main(int argc, char *argv[]) {
     socklen_t sin_size;
     struct sigaction sa;
     char s[INET6_ADDRSTRLEN];
-    char header_buf[8192]; // todo: turn this into not magic
-    char sendbuf[100000];
 
     if (argc != 2) {
        printf("Usage: %s <port>\n", argv[0]);
@@ -76,7 +71,7 @@ int main(int argc, char *argv[]) {
 
     printf("server: Listening on port %s...\n", argv[1]);
 
-    Dictionary * content_cache = preload_cache();
+    // Dictionary * content_cache = preload_cache();
 
     while (keepRunning) {
         sin_size = sizeof their_addr;
@@ -90,33 +85,51 @@ int main(int argc, char *argv[]) {
 
         inet_ntop(their_addr.ss_family, get_in_addr((struct sockaddr *)&their_addr), s, sizeof s);
 
-        if (!fork()) {
+        const pid_t pid = fork();
+
+        if (pid < 0) {
+            perror("fork");
+            continue;
+        }
+
+        if (pid > 0) {
             close(sockfd);
 
             handle_connection(new_fd);
-            show_request(request);
+            const char *body = "Hello, world!\n";
+            char response[256];
+            const int n = snprintf(response, sizeof response,
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/plain\r\n"
+                "Content-Length: %zu\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+                "%s",
+                strlen(body), body);
 
-            HttpResponse *response = pack_response(request, content_cache);
-            free(request);
+            if (send(new_fd, response, n, 0) == -1) perror("send");
+            // show_request(request);
 
-            const int res_len = serialize_response(response, sendbuf, sizeof(sendbuf) );
+            // HttpResponse *response = pack_response(request, content_cache);
+            // free(request);
 
-            if (send(new_fd, sendbuf, res_len, 0) == -1) {
-                perror("send");
-            }
+            // const int res_len = serialize_response(response, sendbuf, sizeof(sendbuf) );
 
-            free_response(response);
+            // if (send(new_fd, sendbuf, res_len, 0) == -1) {
+            //     perror("send");
+            // }
 
-            memset(sendbuf, 0, sizeof(sendbuf));
+            // free_response(response);
+
+            // memset(sendbuf, 0, sizeof(sendbuf));
 
             close(new_fd);
             exit(0);
         }
-
         close(new_fd);
     }
 
-    free_dict(content_cache);
+    // free_dict(content_cache);
 
     return EXIT_SUCCESS;
 }

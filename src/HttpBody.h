@@ -15,8 +15,17 @@ typedef enum {
     TE_UNSUPPORTED,  // any non-chunked coding present
 } TransferCoding;
 
+typedef struct {
+    ParseResult parse_result;
+    size_t chunk_size;
+} ChunkResult;
+
 ParseStatus parse_content_length(const char * val, size_t * out);
 
 ParseStatus parse_transfer_encoding(const char * val, TransferCoding * coding);
+
+ChunkResult parse_chunk(const char * buf, const char * end, char * dest);
+
+ParseResult body_dechunk(const char * buf, const char * end, char * dest);
 
 #endif //HTTPSERVER_HTTPBODY_H

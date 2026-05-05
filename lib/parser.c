@@ -5,6 +5,7 @@
 #include "parser.h"
 
 #include <ctype.h>
+#include <stdio.h>
 
 // returns end when no crlf is found
 const char *find_crlf(const char *cur, const char *end) {
