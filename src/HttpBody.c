@@ -4,8 +4,6 @@
 
 #include "HttpBody.h"
 
-#include <ctype.h>
-#include <stdio.h>
 #include <string.h>
 
 #include "../lib/parser.h"
@@ -14,8 +12,6 @@ ParseStatus parse_content_length(const char *val, size_t *out) {
     return parse_uint(val, strlen(val), 10, MAX_BODY_LEN, out);
 }
 
-// 5\r\nABCDE\r\n0\r\n\r\n
-// 01 2 345678 9 01 2 3 4 --- 14
 ChunkResult parse_chunk(const char * buf, const char * end, char * dest) {
     ChunkResult res = {0};
     const char * cur = buf;
@@ -23,8 +19,8 @@ ChunkResult parse_chunk(const char * buf, const char * end, char * dest) {
     // parse length and handle ext
     size_t len;
     const char * crlf = find_crlf(cur, end);
-    if (!crlf) {
-        set_parse_error(&res.parse_result, PARSE_BAD_REQUEST, cur);
+    if (!crlf || (crlf == end && end[0] != '\r' && end[1] != '\n')) {
+        set_parse_error(&res.parse_result, PARSE_INCOMPLETE, cur);
         return res;
     }
     const char *size_end = memchr(cur, ';', crlf - cur);
@@ -41,19 +37,22 @@ ChunkResult parse_chunk(const char * buf, const char * end, char * dest) {
     }
 
     // parse content
-    if (cur + len + 2 > end || cur[len] != '\r' || cur[len + 1] != '\n' ) {
+    if (cur + len + 2 > end) {
+        set_parse_error(&res.parse_result, PARSE_INCOMPLETE, cur);
+        return res;
+    }
+    if (cur[len] != '\r' || cur[len + 1] != '\n' ) {
         set_parse_error(&res.parse_result, PARSE_BAD_REQUEST, cur);
         return res;
     }
 
     memcpy(dest, cur, len);
     res.parse_result.status = PARSE_OK;
-    res.parse_result.next = cur + len + 2;
+    if (cur + len + 2 <= end) res.parse_result.next = cur + len + 2;
     res.chunk_size = len;
     return res;
 }
 
-// 5\r\nABCDE\r\n0\r\n\r\n
 ParseResult body_dechunk(const char * buf, const char * end, char * dest) {
     const char * cur = buf;
     size_t total = 0;
@@ -68,14 +67,14 @@ ParseResult body_dechunk(const char * buf, const char * end, char * dest) {
 
     while (1) {
         if (cur + 2 > end) {
-            set_parse_error(&c.parse_result, PARSE_BAD_REQUEST, cur);
+            set_parse_error(&c.parse_result, PARSE_INCOMPLETE, cur);
             return c.parse_result;
         }
 
         if (cur[0] == '\r' && cur[1] == '\n') { cur += 2; break; }   // body terminator
         const char *crlf = find_crlf(cur, end);
         if (!crlf) {
-            set_parse_error(&c.parse_result, PARSE_BAD_REQUEST, cur);
+            set_parse_error(&c.parse_result, PARSE_INCOMPLETE, cur);
             return c.parse_result;
         }
         cur = crlf + 2;
