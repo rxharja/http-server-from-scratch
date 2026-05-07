@@ -119,38 +119,35 @@ ReadHeaderResult recv_header(const int fd, char *header_buf, const ssize_t heade
     return res;
 }
 
-ReadBodyResult recv_chunked_body(const int fd, const char *buf, const size_t already_have, char * dest_buf) {
+ReadBodyResult recv_chunked_body(const int fd, char *buf, const size_t already_have, char * dest_buf) {
     ReadBodyResult res = {0};
 
     //not sure if we need this
     //keep-alive
-    size_t body_len = strlen(buf);
+    const size_t body_len = strlen(buf);
     if (already_have > body_len) {
         res.status = READ_BODY_OVERREAD;
         res.next_req_offset = body_len;
         res.body_received = body_len;
-        ParseResult dechunk_res = body_dechunk(buf, buf + res.body_received, dest_buf);
-        if (dechunk_res.status == READ_BODY_OK) return res;
-        if (dechunk_res.status != PARSE_INCOMPLETE) {
-            dechunk_res.status = PARSE_BAD_REQUEST;
+        ChunkResult dechunk_res = body_dechunk(buf, buf + res.body_received, dest_buf);
+        if (dechunk_res.parse_result.status == READ_BODY_OK) return res;
+        if (dechunk_res.parse_result.status != PARSE_INCOMPLETE) {
+            dechunk_res.parse_result.status = PARSE_BAD_REQUEST;
             return res;
         }
     }
 
-    res.body_received = already_have;
-    ParseResult dechunk_res = body_dechunk(buf, buf + res.body_received, dest_buf);
+    ChunkResult dechunk_res = body_dechunk(buf, buf + already_have, dest_buf);
 
-    if (dechunk_res.status == PARSE_BAD_REQUEST) {
+    if (dechunk_res.parse_result.status == PARSE_BAD_REQUEST) {
         res.status = READ_BODY_IO_ERROR;
         return res;
     }
 
-    if (dechunk_res.status == PARSE_INCOMPLETE || dechunk_res.status == PARSE_OK) {
-        res.body_received += dechunk_res.next - buf;
-    }
-
     while (1) {
-        if (dechunk_res.status == PARSE_OK) {
+        res.body_received += dechunk_res.chunk_size;
+
+        if (dechunk_res.parse_result.status == PARSE_OK) {
             res.status = READ_BODY_OK;
             return res;
         }
@@ -161,7 +158,7 @@ ReadBodyResult recv_chunked_body(const int fd, const char *buf, const size_t alr
         }
 
         // how do we figure out how much to pull each loop? is it arbitrary?
-        const ssize_t got = recv(fd, &dechunk_res.next, 8, 0);
+        const ssize_t got = recv(fd, buf+strlen(buf), 64, 0);
 
         if (got == 0) { res.status = READ_BODY_PEER_CLOSED; break; }
 
@@ -176,9 +173,10 @@ ReadBodyResult recv_chunked_body(const int fd, const char *buf, const size_t alr
             return res;
         }
 
-        res.body_received += got;
-
-        dechunk_res = body_dechunk(buf + res.body_received, buf + res.body_received + got, dest_buf);
+        dechunk_res = body_dechunk(
+            dechunk_res.parse_result.error_position,
+            dechunk_res.parse_result.error_position + got,
+            dest_buf + res.body_received);
     }
 
     return res;

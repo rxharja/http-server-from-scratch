@@ -251,13 +251,13 @@ static void expect_dechunk_ok(const char *label,
                               const char *input, const size_t input_len,
                               const char *want_decoded, const size_t want_decoded_len) {
     char dest[4096] = {0};
-    const ParseResult res = body_dechunk(input, input + input_len, dest);
-    check(label, res.status == PARSE_OK, "body_dechunk: not OK");
+    const ChunkResult res = body_dechunk(input, input + input_len, dest);
+    check(label, res.parse_result.status == PARSE_OK, "body_dechunk: not OK");
     if (want_decoded_len > 0 && want_decoded) {
         check(label, memcmp(dest, want_decoded, want_decoded_len) == 0,
               "body_dechunk: data mismatch");
     }
-    check(label, res.next == input + input_len, "body_dechunk: consumed mismatch");
+    check(label, res.parse_result.next == input + input_len, "body_dechunk: consumed mismatch");
 }
 
 // body_dechunk error path — status only.
@@ -265,8 +265,8 @@ static void expect_dechunk_err(const char *label,
                                const char *input, const size_t input_len,
                                const ParseStatus want_status) {
     char dest[4096] = {0};
-    const ParseResult res = body_dechunk(input, input + input_len, dest);
-    check(label, res.status == want_status, "body_dechunk: status mismatch");
+    const ChunkResult res = body_dechunk(input, input + input_len, dest);
+    check(label, res.parse_result.status == want_status, "body_dechunk: status mismatch");
 }
 
 int main(void) {

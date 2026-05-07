@@ -53,34 +53,37 @@ ChunkResult parse_chunk(const char * buf, const char * end, char * dest) {
     return res;
 }
 
-ParseResult body_dechunk(const char * buf, const char * end, char * dest) {
+ChunkResult body_dechunk(const char * buf, const char * end, char * dest) {
     const char * cur = buf;
     size_t total = 0;
     ChunkResult c = {0};
     while (1) {
         c = parse_chunk(cur, end, dest + total);
-        if (c.parse_result.status != PARSE_OK) return c.parse_result;
+        total += c.chunk_size;
+        if (c.parse_result.status != PARSE_OK) {
+            c.chunk_size = total; // accumulate it here
+            return c;
+        }
         cur = c.parse_result.next;
         if (c.chunk_size == 0) break;
-        total += c.chunk_size;
     }
 
     while (1) {
         if (cur + 2 > end) {
             set_parse_error(&c.parse_result, PARSE_INCOMPLETE, cur);
-            return c.parse_result;
+            return c;
         }
 
         if (cur[0] == '\r' && cur[1] == '\n') { cur += 2; break; }   // body terminator
         const char *crlf = find_crlf(cur, end);
         if (!crlf) {
             set_parse_error(&c.parse_result, PARSE_INCOMPLETE, cur);
-            return c.parse_result;
+            return c;
         }
         cur = crlf + 2;
     }
 
-    return (ParseResult){ .next = cur, .status = PARSE_OK };
+    return (ChunkResult){ (ParseResult){.next = cur, .status = PARSE_OK }, .chunk_size = total };
 }
 
 // Case-insensitive equality of bytes [start, start+len) against the literal "chunked".
