@@ -648,8 +648,8 @@ int main(void) {
     expect_parse_chunk_err("PChunk - non-hex size",          "G\r\n",              3, PARSE_BAD_REQUEST);
     expect_parse_chunk_err("PChunk - empty size",            "\r\n",               2, PARSE_BAD_REQUEST);
     expect_parse_chunk_err("PChunk - ext only no size",      ";ext=v\r\n",         8, PARSE_BAD_REQUEST);
-    expect_parse_chunk_err("PChunk - data shorter",          "5\r\nABC",           6, PARSE_BAD_REQUEST);
-    expect_parse_chunk_err("PChunk - missing trail CRLF",    "5\r\nABCDE",         8, PARSE_BAD_REQUEST);
+    expect_parse_chunk_err("PChunk - data shorter",          "5\r\nABC",           6, PARSE_INCOMPLETE);
+    expect_parse_chunk_err("PChunk - missing trail CRLF",    "5\r\nABCDE",         8, PARSE_INCOMPLETE);
     expect_parse_chunk_err("PChunk - wrong byte after data", "5\r\nABCDEXX",      10, PARSE_BAD_REQUEST);
 
     // body_dechunk — full chunked-body grammar:
@@ -673,7 +673,7 @@ int main(void) {
 
     // Error paths.
     expect_dechunk_err("Dechunk - missing terminator",
-        "5\r\nABCDE\r\n0\r\n",                                 13, PARSE_BAD_REQUEST);
+        "5\r\nABCDE\r\n0\r\n",                                 13, PARSE_INCOMPLETE);
     expect_dechunk_err("Dechunk - trailer line no CRLF",
         "0\r\nFoo: bar",                                       11, PARSE_INCOMPLETE);
     expect_dechunk_err("Dechunk - non-hex size mid-body",
