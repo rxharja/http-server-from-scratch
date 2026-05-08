@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        if (pid > 0) {
+        if (pid == 0) {
             close(sockfd);
 
             handle_connection(new_fd);

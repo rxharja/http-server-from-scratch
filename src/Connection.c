@@ -119,64 +119,37 @@ ReadHeaderResult recv_header(const int fd, char *header_buf, const ssize_t heade
     return res;
 }
 
-ReadBodyResult recv_chunked_body(const int fd, char *buf, const size_t already_have, char * dest_buf) {
+ReadBodyResult recv_chunked_body(const int fd, char *buf, size_t have, const size_t buf_cap, char * dest_buf) {
     ReadBodyResult res = {0};
+    while (1) {
+        const ChunkResult dechunk_res = body_dechunk(buf, buf + have, dest_buf);
 
-    //not sure if we need this
-    //keep-alive
-    const size_t body_len = strlen(buf);
-    if (already_have > body_len) {
-        res.status = READ_BODY_OVERREAD;
-        res.next_req_offset = body_len;
-        res.body_received = body_len;
-        ChunkResult dechunk_res = body_dechunk(buf, buf + res.body_received, dest_buf);
-        if (dechunk_res.parse_result.status == READ_BODY_OK) return res;
-        if (dechunk_res.parse_result.status != PARSE_INCOMPLETE) {
-            dechunk_res.parse_result.status = PARSE_BAD_REQUEST;
+        if (dechunk_res.parse_result.status == PARSE_BAD_REQUEST) {
+            res.status = READ_BODY_BAD_DATA;
             return res;
         }
-    }
 
-    ChunkResult dechunk_res = body_dechunk(buf, buf + already_have, dest_buf);
-
-    if (dechunk_res.parse_result.status == PARSE_BAD_REQUEST) {
-        res.status = READ_BODY_IO_ERROR;
-        return res;
-    }
-
-    while (1) {
-        res.body_received += dechunk_res.chunk_size;
+        res.body_received = dechunk_res.chunk_size;
 
         if (dechunk_res.parse_result.status == PARSE_OK) {
             res.status = READ_BODY_OK;
             return res;
         }
 
-        if (res.body_received > MAX_BODY_LEN) {
+        if (have >= buf_cap) {
             res.status = READ_BODY_TOO_LARGE;
             return res;
         }
 
-        // how do we figure out how much to pull each loop? is it arbitrary?
-        const ssize_t got = recv(fd, buf+strlen(buf), 64, 0);
+        const ssize_t got = recv(fd, buf+have, buf_cap - have, 0);
 
         if (got == 0) { res.status = READ_BODY_PEER_CLOSED; break; }
-
         if (got < 0) { // -1
             if (errno == EINTR) continue;
             res.status = READ_BODY_IO_ERROR;
             break;
         }
-
-        if (res.body_received + got > MAX_BODY_LEN) {
-            res.status = READ_BODY_TOO_LARGE;
-            return res;
-        }
-
-        dechunk_res = body_dechunk(
-            dechunk_res.parse_result.error_position,
-            dechunk_res.parse_result.error_position + got,
-            dest_buf + res.body_received);
+        have += got;
     }
 
     return res;
@@ -220,15 +193,21 @@ ParseResult handle_connection(const int fd) {
     ParseResult req_res = {0};
 
     HttpRequest *req = malloc(sizeof(HttpRequest));
-    char * buf = malloc(8192 * sizeof(char));
+    char * buf = malloc(MAX_BODY_LEN * sizeof(char));
 
     const ReadHeaderResult header_res = recv_header(fd, buf, 8192);
-    if (header_res.status == READ_HEADER_PEER_CLOSED) close(fd); // maybe send 400 here
-    if (header_res.status == READ_HEADER_IO_ERROR) close(fd);
-    if (header_res.status == READ_HEADER_TOO_LARGE) close(fd); // send a 431 here
+    if (header_res.status != READ_HEADER_OK) {
+        req_res.status = (header_res.status == READ_HEADER_TOO_LARGE)
+            ? PARSE_HEADER_TOO_LONG
+            : PARSE_BAD_REQUEST;
+        goto cleanup;
+    }
 
     const ParseResult parse_req_res = parse_request(buf, header_res.total_received, req);
-    if (parse_req_res.status != PARSE_OK) return parse_req_res;
+    if (parse_req_res.status != PARSE_OK) {
+        req_res.status =  parse_req_res.status;
+        goto cleanup;
+    }
 
     TransferCoding coding = TE_NONE;
     ParseStatus status = PARSE_OK;
@@ -241,7 +220,7 @@ ParseResult handle_connection(const int fd) {
     // parse content-length if no transfer encoding
     if (coding == TE_UNSUPPORTED || status != PARSE_OK) {
         set_parse_error(&req_res, status, buf);
-        return req_res;
+        goto cleanup;
     }
 
     ReadBodyResult body_res = {0};
@@ -250,6 +229,7 @@ ParseResult handle_connection(const int fd) {
             fd,
             buf + header_res.body_start,
             header_res.total_received - header_res.body_start,
+            MAX_BODY_LEN - header_res.body_start,
             req->body);
     }
     else {
@@ -259,14 +239,12 @@ ParseResult handle_connection(const int fd) {
         if (!ct_len_h) {
             req_res.status = PARSE_OK;
             show_request(req);
-            free(req);
-            free(buf);
-            return req_res;
+            goto cleanup;
         }
 
         size_t body_len = 0;
         req_res.status = parse_uint(ct_len_h->value, strlen(ct_len_h->value), 10, MAX_BODY_LEN, &body_len);
-        if (req_res.status != PARSE_OK) return req_res;
+        if (req_res.status != PARSE_OK) goto cleanup;
         body_res = recv_body(
             fd,
             buf + header_res.body_start,
@@ -279,9 +257,9 @@ ParseResult handle_connection(const int fd) {
         req_res.status = PARSE_OK;
         show_request(req);
     }
-    else if (body_res.status != PARSE_OK) set_parse_error(&req_res, PARSE_BAD_REQUEST, req->body + header_res.body_start + body_res.next_req_offset);
+    else set_parse_error(&req_res, PARSE_BAD_REQUEST, req->body + header_res.body_start + body_res.next_req_offset);
 
-    free(req);
-    free(buf);
+cleanup:
+    free(req); free(buf);
     return req_res;
 }
