@@ -24,22 +24,4 @@ void show_request(const HttpRequest * req);
 
 ParseResult parse_request(const char *buf, size_t len, HttpRequest *req);
 
-/* CONTENT */
-typedef struct {
-    char * body;
-    long body_len;
-} Content;
-
-typedef struct {
-    Content content;
-    char* Key;
-} CachedContent;
-
-typedef struct {
-    char version[VERSION_LEN];
-    long version_len;
-    int port;
-} Settings;
-
-//TODO: add data structure to cache requested content
 #endif //HTTPREQUEST_H

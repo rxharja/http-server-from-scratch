@@ -4,30 +4,32 @@
 
 #ifndef HTTPSERVER_HEADER_H
 #define HTTPSERVER_HEADER_H
-#include "../lib/Dictionary.h"
 #include "HttpRequest.h"
+#include "../lib/Dictionary.h"
 
 typedef struct {
-    char version[VERSION_LEN];
-    int statusCode;
-    char reasonPhrase[MAX_REASON_PHRASE_LEN];
-    Header headers[MAX_HEADERS];
-    int headerCount;
-    Content *content;
+    const char *key;
+    const char *value;
+} ResponseHeader;
+
+typedef struct {
+    int status;                    // 200, 404, 500
+    const char *reason;            // "OK", "Not Found", etc.
+    const ResponseHeader *headers; // caller-owned, usually static
+    size_t header_count;
+    const char *body;             // body bytes, may be NULL
+    size_t body_len;
 } HttpResponse;
+
+typedef HttpResponse (*handler_fn)(const HttpRequest * req);
+
+typedef struct {
+    const char *method, *path;
+    const handler_fn fn;
+} Route;
 
 HttpResponse* pack_response(const HttpRequest * req, const Dictionary * d);
 
-void free_response(HttpResponse * res);
-
-void set_header(HttpResponse * res, const char * name, const char * value);
-
-int get_content(const char * path, Content * res);
-
-char* get_content_type(const char * path);
-
 int serialize_response(const HttpResponse * resp, char * buffer, size_t buffer_size);
-
-Dictionary * preload_cache(void);
 
 #endif //HTTPSERVER_HEADER_H
