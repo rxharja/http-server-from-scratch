@@ -18,6 +18,7 @@ typedef struct {
     Header headers[MAX_HEADERS];
     size_t header_count;
     char body[MAX_BODY_LEN];
+    size_t body_len;
 } HttpRequest;
 
 void show_request(const HttpRequest * req);

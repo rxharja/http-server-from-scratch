@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <asm-generic/errno-base.h>
 #include "HttpRequest.h"
+#include "HttpResponse.h"
 #include "ParseResult.h"
 #include "../lib/parser.h"
 
@@ -188,14 +189,46 @@ ReadBodyResult recv_body(const int fd, const char *buf, const size_t already_hav
 
     return res;
 }
+static HttpResponse to_http_response(const ParseStatus s) {
+    static const HttpResponse r400 = { .status = 400, .reason = "Bad Request",
+                                       .body = "Bad Request", .body_len = 11 };
+    static const HttpResponse r413 = { .status = 413, .reason = "Payload Too Large",
+                                       .body = "Payload too large", .body_len = 17 };
+    static const HttpResponse r414 = { .status = 414, .reason = "URI Too Long",
+                                       .body = "URI Too Long", .body_len = 12 };
+    static const HttpResponse r431 = { .status = 431, .reason = "Request Header Fields Too Large",
+                                       .body = "Request Header Fields Too Large", .body_len = 31 };
+    static const HttpResponse r500 = { .status = 500, .reason = "Internal Server Error",
+                                       .body = "Internal Server Error", .body_len = 21 };
+    static const HttpResponse r501 = { .status = 501, .reason = "Not Implemented",
+                                       .body = "Not Implemented", .body_len = 15 };
+    static const HttpResponse r505 = { .status = 505, .reason = "HTTP Version Not Supported",
+                                       .body = "HTTP Version Not Supported", .body_len = 26 };
+    static const HttpResponse r404 = { .status = 404, .reason = "Not Found",
+                                       .body = "Not Found", .body_len = 9 };
 
-ParseResult handle_connection(const int fd) {
+    switch (s) {
+        case PARSE_BAD_REQUEST:           return r400;
+        case PARSE_PAYLOAD_TOO_LARGE:     return r413;
+        case PARSE_URI_TOO_LONG:          return r414;
+        case PARSE_HEADER_KEY_TOO_LONG:
+        case PARSE_HEADER_VALUE_TOO_LONG:
+        case PARSE_HEADER_TOO_LONG:       return r431;
+        case PARSE_NOT_IMPLEMENTED:       return r501;
+        case PARSE_VERSION_NOT_SUPPORTED: return r505;
+        case PARSE_NOT_FOUND:             return r404;
+        default:                          return r500;
+    }
+}
+
+HttpResponse handle_connection(const int fd, const Route routes[], const size_t count) {
     ParseResult req_res = {0};
+    HttpResponse res = to_http_response(PARSE_BAD_REQUEST);
 
     HttpRequest *req = malloc(sizeof(HttpRequest));
     char * buf = malloc(MAX_BODY_LEN * sizeof(char));
 
-    const ReadHeaderResult header_res = recv_header(fd, buf, 8192);
+    const ReadHeaderResult header_res = recv_header(fd, buf, MAX_HEADER_LEN);
     if (header_res.status != READ_HEADER_OK) {
         req_res.status = (header_res.status == READ_HEADER_TOO_LARGE)
             ? PARSE_HEADER_TOO_LONG
@@ -220,6 +253,7 @@ ParseResult handle_connection(const int fd) {
     // parse content-length if no transfer encoding
     if (coding == TE_UNSUPPORTED || status != PARSE_OK) {
         set_parse_error(&req_res, status, buf);
+        res = to_http_response(req_res.status);
         goto cleanup;
     }
 
@@ -235,31 +269,38 @@ ParseResult handle_connection(const int fd) {
     else {
         const Header * ct_len_h = get_header(req->headers, req->header_count, "content-length");
 
-        // no C-E and no T-E = no body
+        // no C-E and no T-E = no-body
         if (!ct_len_h) {
             req_res.status = PARSE_OK;
             show_request(req);
-            goto cleanup;
         }
+        else {
+            size_t body_len = 0;
+            req_res.status = parse_uint(ct_len_h->value, strlen(ct_len_h->value), 10, MAX_BODY_LEN, &body_len);
+            if (req_res.status != PARSE_OK) goto cleanup;
+            body_res = recv_body(
+                fd,
+                buf + header_res.body_start,
+                header_res.total_received - header_res.body_start,
+                body_len,
+                req->body);
 
-        size_t body_len = 0;
-        req_res.status = parse_uint(ct_len_h->value, strlen(ct_len_h->value), 10, MAX_BODY_LEN, &body_len);
-        if (req_res.status != PARSE_OK) goto cleanup;
-        body_res = recv_body(
-            fd,
-            buf + header_res.body_start,
-            header_res.total_received - header_res.body_start,
-            body_len,
-            req->body);
+            if (body_res.status == READ_BODY_OK) {
+                req_res.status = PARSE_OK;
+                show_request(req);
+            }
+            else {
+                set_parse_error(&req_res, PARSE_BAD_REQUEST, buf);
+                res = to_http_response(req_res.status);
+            }
+        }
     }
 
-    if (body_res.status == READ_BODY_OK) {
-        req_res.status = PARSE_OK;
-        show_request(req);
-    }
-    else set_parse_error(&req_res, PARSE_BAD_REQUEST, req->body + header_res.body_start + body_res.next_req_offset);
+    const Route * route = route_lookup(routes, count, show_http_method(req->request_line.method), req->request_line.path);
+    if (route == NULL) res = to_http_response(PARSE_NOT_FOUND);
+    else               res = route->fn(req);
 
 cleanup:
     free(req); free(buf);
-    return req_res;
+    return res;
 }

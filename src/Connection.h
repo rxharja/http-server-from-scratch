@@ -8,6 +8,7 @@
 #include <netdb.h>
 #include <sys/socket.h>
 #include "HttpRequest.h"
+#include "HttpResponse.h"
 
 /* READ HEADER */
 typedef enum {
@@ -53,6 +54,6 @@ ReadBodyResult recv_chunked_body(int fd, char *buf, size_t have, size_t buf_cap,
 /// invariant: result.body_received is in the set of [0, body_len]
 ReadBodyResult recv_body(int fd, const char *buf, size_t already_have, size_t body_len, char * dest_buf);
 
-ParseResult handle_connection(int fd);
+HttpResponse handle_connection(int fd, const Route routes[], size_t count);
 
 #endif //HTTPSERVER_CONNECTION_H

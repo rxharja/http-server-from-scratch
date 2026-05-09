@@ -5,13 +5,15 @@
 #include "HttpResponse.h"
 #include <string.h>
 
-int serialize_response(const HttpResponse * resp, char * buffer, size_t buffer_size) {
-    int offset = 0;
+ssize_t serialize_response(const HttpResponse * resp, char * buffer, const size_t buffer_size) {
+    ssize_t offset = 0;
 
     // Start line
     int written = snprintf(buffer + offset, buffer_size - offset,
-                           "%s %d %s\r\n", "HTTP/1.1", resp->status, resp->reason);
+        "%s %d %s\r\n", "HTTP/1.1", resp->status, resp->reason);
+
     if (written < 0 || written > buffer_size - offset) return -1;
+
     offset += written;
 
     // Headers
@@ -24,8 +26,7 @@ int serialize_response(const HttpResponse * resp, char * buffer, size_t buffer_s
 
     // Blank line
     if (offset + 2 >= buffer_size) return -1;
-    buffer[offset++] = '\r';
-    buffer[offset++] = '\n';
+    buffer[offset++] = '\r'; buffer[offset++] = '\n';
 
     // Body
     if (resp->body && resp->body_len > 0) {
@@ -35,4 +36,15 @@ int serialize_response(const HttpResponse * resp, char * buffer, size_t buffer_s
     }
 
     return offset; // total bytes written
+}
+
+const Route * route_lookup(const Route routes[], const size_t count, const char * method, const char * path) {
+    for (int i = 0; i < count; i++) {
+        const Route * route = &routes[i];
+        if (strcmp(route->method, method) == 0 && strcmp(route->path, path) == 0) {
+            return route;
+        }
+    }
+
+    return NULL;
 }

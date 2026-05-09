@@ -18,7 +18,9 @@ add_executable(HttpServer src/main.c
         src/HttpBody.h
         src/Connection.c
         src/Connection.h
-        src/ConsumerCode.c)
+        src/ConsumerCode.c
+        src/HttpServer.c
+        src/HttpServer.h)
 
 add_executable(HttpServerTests tests/ParserTests.c
         src/HttpRequest.c src/HttpRequest.h
