@@ -9,6 +9,7 @@
 #include "ParseResult.h"
 
 #define MAX_HEADERS 32
+#define MAX_HEADER_LEN (1024 * 1024 * 8)
 #define MAX_HEADER_KEY_LEN 64
 #define MAX_HEADER_VALUE_LEN 256
 
