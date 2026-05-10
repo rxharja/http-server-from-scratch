@@ -86,8 +86,9 @@ int valid_port(const char * str) {
 }
 
 // TODO: blocking I/O, needs to handle EAGAIN/EWOULDBLOCK
-ReadHeaderResult recv_header(const int fd, char *header_buf, const ssize_t header_cap) {
+ReadHeaderResult recv_header(const int fd, char *header_buf, const size_t already_have, const ssize_t header_cap) {
     ReadHeaderResult res = {0};
+    res.total_received = already_have;
     while (1) {
         if (res.total_received >= header_cap) {
             res.status = READ_HEADER_TOO_LARGE; // return 431
@@ -235,11 +236,7 @@ HttpResponse synthesize_405(const char * const *allowed, const size_t allowed_co
     };
 }
 
-void keep_alive() {
-    // get
-}
-
-KeepAliveStatus handle_connection(const int fd, const Route routes[], const size_t count, char *out_buf, const size_t out_buf_size) {
+KeepAliveStatus handle_connection(const int fd, const Route routes[], const size_t route_count, char *out_buf, const size_t out_buf_size, const size_t already_have) {
     KeepAliveStatus status = {0};
     HttpResponse res = to_http_response(PARSE_BAD_REQUEST);
     char res_allow_buf[128] = {0};
@@ -248,7 +245,7 @@ KeepAliveStatus handle_connection(const int fd, const Route routes[], const size
     HttpRequest *req = malloc(sizeof(HttpRequest));
     char *req_buf = malloc(MAX_BODY_LEN * sizeof(char));
 
-    const ReadHeaderResult header_res = recv_header(fd, req_buf, MAX_HEADER_LEN);
+    const ReadHeaderResult header_res = recv_header(fd, req_buf, already_have, MAX_HEADER_LEN);
     if (header_res.status != READ_HEADER_OK) {
         res = to_http_response(header_res.status == READ_HEADER_TOO_LARGE
             ? PARSE_HEADER_TOO_LONG : PARSE_BAD_REQUEST);
@@ -266,6 +263,10 @@ KeepAliveStatus handle_connection(const int fd, const Route routes[], const size
         Header * host_header = get_header(req->headers, req->header_count, "host");
         if (!host_header) { res = to_http_response(PARSE_BAD_REQUEST); goto cleanup; }
     }
+
+    // Keep-Alive or close decision, next req offset set.
+    Header * ka_header = get_header(req->headers, req->header_count, "keep-alive");
+    if (!ka_header || ascii_ieq("keep-alive", ka_header->value)) status.keep_alive = 1;
 
     TransferCoding coding = TE_NONE;
     ParseStatus te_status = PARSE_OK;
@@ -304,9 +305,10 @@ KeepAliveStatus handle_connection(const int fd, const Route routes[], const size
             req->body_len = body_res.body_received;
         }
     }
+    status.next_req_offset = body_res.next_req_offset;
 
     const HttpMethod method = req->request_line.method == HEAD ? GET : req->request_line.method;
-    const RouteLookupResult route_res = route_lookup(routes, count, show_http_method(method), req->request_line.path);
+    const RouteLookupResult route_res = route_lookup(routes, route_count, show_http_method(method), req->request_line.path);
 
     if (route_res.route)                  res = route_res.route->fn(req);
     else if (route_res.allowed_count > 0) res = synthesize_405(route_res.allowed, route_res.allowed_count, res_allow_buf, sizeof(res_allow_buf), &allow_h);
@@ -317,8 +319,8 @@ KeepAliveStatus handle_connection(const int fd, const Route routes[], const size
     show_request(req);
 
 cleanup: ;
-    const ssize_t n = serialize_response(&res, out_buf, out_buf_size);
+    status.bytes_to_send = serialize_response(&res, out_buf, out_buf_size, status.keep_alive);
     free(req);
     free(req_buf);
-    return n;
+    return status;
 }

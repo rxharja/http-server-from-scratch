@@ -53,7 +53,7 @@ void *get_in_addr(struct sockaddr *sa);
 
 int valid_port(const char * str);
 
-ReadHeaderResult recv_header(int fd, char *header_buf, ssize_t header_cap);
+ReadHeaderResult recv_header(int fd, char *header_buf, size_t already_have, ssize_t header_cap);
 
 ReadBodyResult recv_chunked_body(int fd, char *buf, size_t have, size_t buf_cap, char * dest_buf);
 
@@ -62,6 +62,6 @@ ReadBodyResult recv_body(int fd, const char *buf, size_t already_have, size_t bo
 
 HttpResponse synthesize_405(const char * const *allowed, size_t allowed_count, char *allow_buf, size_t allow_buf_size, ResponseHeader *h);
 
-KeepAliveStatus handle_connection(int fd, const Route routes[], size_t count, char *out_buf, size_t out_buf_size);
+KeepAliveStatus handle_connection(int fd, const Route routes[], size_t route_count, char *out_buf, size_t out_buf_size, size_t already_have);
 
 #endif //HTTPSERVER_CONNECTION_H

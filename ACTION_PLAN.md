@@ -38,11 +38,11 @@ Effectively done — you exceed strict 0.9 by always emitting a status line and 
 - [x] `GET`
 - [x] `Content-Type` and `Content-Length` response headers
 - [x] Close after each response
-- [ ] `HEAD` (same headers as `GET`, no body)
-- [ ] `POST` (currently 405) — even acknowledging with 200 and discarding the body is a starting point
-- [ ] Read request body using `Content-Length`
-- [ ] `Date` response header (RFC 7231 IMF-fixdate)
-- [ ] `Server` response header
+- [X] `HEAD` (same headers as `GET`, no body)
+- [X] `POST` (currently 405) — even acknowledging with 200 and discarding the body is a starting point
+- [X] Read request body using `Content-Length`
+- [X] `Date` response header (RFC 7231 IMF-fixdate)
+- [x] `Server` response header, no plan to implement
 - [x] `400 Bad Request` for malformed start lines / headers
 - [x] `501 Not Implemented` for unknown methods (separate from `405`)
 
@@ -53,19 +53,19 @@ The largest milestone. Five sub-stages.
 ### 1.1a — basics
 
 - [x] Advertise `HTTP/1.1`
-- [ ] Require `Host` header → `400` if missing
+- [x] Require `Host` header → `400` if missing
 - [ ] Persistent connections by default; loop reading requests on the same fd
 - [ ] Per-connection idle timeout and per-request header-read timeout
-- [ ] Always emit `Date`
-- [ ] Honor `Connection: close`
+- [x] Always emit `Date`
+- [x] Honor `Connection: close`
 
 ### 1.1b — bodies and framing
 
-- [ ] Decode chunked requests (`chunk-size [;ext]\r\n data \r\n`, terminator `0\r\n\r\n`, optional trailers)
+- [x] Decode chunked requests (`chunk-size [;ext]\r\n data \r\n`, terminator `0\r\n\r\n`, optional trailers)
 - [ ] Encode chunked responses when length isn't known up front
 - [ ] `Expect: 100-continue` → emit `HTTP/1.1 100 Continue\r\n\r\n` before reading body, or reject with `417`
 - [ ] Pipelining: queue and reply in arrival order
-- [ ] Reject requests with both `Transfer-Encoding` and `Content-Length` (smuggling vector)
+- [x] Reject requests with both `Transfer-Encoding` and `Content-Length` (smuggling vector)
 
 ### 1.1c — caching and conditionals
 
@@ -86,8 +86,8 @@ The largest milestone. Five sub-stages.
 ### 1.1e — methods and status surface
 
 - [ ] `OPTIONS` (and `OPTIONS *`) advertising via `Allow:`
-- [ ] `PUT`, `DELETE` if you want write semantics
-- [ ] `405` should include `Allow:`
+- [x] `PUT`, `DELETE` if you want write semantics
+- [x] `405` should include `Allow:`
 - [ ] `408`, `413`, `414`, `415`
 
 ### 1.1f — concurrency rework
@@ -100,7 +100,7 @@ Separate wire protocol; build it as a parallel module sharing the request/respon
 
 ### Refactor (prerequisite)
 
-- [ ] Split `HttpRequest`/`HttpResponse` and handler logic into a transport-agnostic core. `parse_request` / `serialize_response` move into a 1.x wire module; an h2 module produces the same structs.
+- [x] Split `HttpRequest`/`HttpResponse` and handler logic into a transport-agnostic core. `parse_request` / `serialize_response` move into a 1.x wire module; an h2 module produces the same structs.
 
 ### Negotiation
 

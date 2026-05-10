@@ -38,7 +38,7 @@ typedef struct {
 
 HttpResponse* pack_response(const HttpRequest * req, const Dictionary * d);
 
-ssize_t serialize_response(const HttpResponse * resp, char * buffer, size_t buffer_size);
+ssize_t serialize_response(const HttpResponse * resp, char * buffer, size_t buffer_size, int keep_alive);
 
 RouteLookupResult route_lookup(const Route routes[], size_t count, const char *method, const char *path);
 

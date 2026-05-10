@@ -53,7 +53,7 @@ int run_server(const char * port, const Route routes[], const size_t count, cons
             close(sock_fd);
             char buf[RESPONSE_BUFFER_SIZE] = {0};
             while (1) {
-                const KeepAliveStatus status = handle_connection(new_fd, routes, count, buf, RESPONSE_BUFFER_SIZE);
+                const KeepAliveStatus status = handle_connection(new_fd, routes, count, buf, RESPONSE_BUFFER_SIZE, status.next_req_offset);
 
                 if (status.bytes_to_send <= 0) {
                     perror("handle_connection");
