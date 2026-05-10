@@ -262,11 +262,13 @@ KeepAliveStatus handle_connection(const int fd, const Route routes[], const size
     if (!ascii_ieq(req->request_line.version, "http/1.0")) {
         Header * host_header = get_header(req->headers, req->header_count, "host");
         if (!host_header) { res = to_http_response(PARSE_BAD_REQUEST); goto cleanup; }
+
+        // Keep-Alive or close decision, next req offset set.
+        Header * ka_header = get_header(req->headers, req->header_count, "connection");
+        if (!ka_header || ascii_ieq("keep-alive", ka_header->value)) status.keep_alive = 1;
+        // otherwise we stay at 0 since it will be connection: close
     }
 
-    // Keep-Alive or close decision, next req offset set.
-    Header * ka_header = get_header(req->headers, req->header_count, "connection");
-    if (!ka_header || ascii_ieq("keep-alive", ka_header->value)) status.keep_alive = 1;
 
     TransferCoding coding = TE_NONE;
     ParseStatus te_status = PARSE_OK;
