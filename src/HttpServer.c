@@ -52,15 +52,22 @@ int run_server(const char * port, const Route routes[], const size_t count, cons
         if (pid == 0) {
             close(sock_fd);
             char buf[RESPONSE_BUFFER_SIZE] = {0};
-            const HttpResponse res = handle_connection(new_fd, routes, count);
-            const int response_size = serialize_response(&res, buf, RESPONSE_BUFFER_SIZE);
+            while (1) {
+                const KeepAliveStatus status = handle_connection(new_fd, routes, count, buf, RESPONSE_BUFFER_SIZE);
 
-            if (response_size <= 0) {
-                perror("serialize_response");
-                return response_size;
+                if (status.bytes_to_send <= 0) {
+                    perror("handle_connection");
+                    close(new_fd);
+                    exit(1);
+                }
+
+                send(new_fd, buf, status.bytes_to_send, 0);
+
+                if (!status.keep_alive) break;
+                if (status.next_req_offset > 0) {
+                    memmove(buf, buf + status.next_req_offset, status.next_req_offset - status.bytes_to_send);
+                }
             }
-            printf("response: %s\n", buf);
-            send(new_fd, buf, response_size, 0);
             close(new_fd);
             exit(0);
         }

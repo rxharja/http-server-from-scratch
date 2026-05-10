@@ -43,5 +43,5 @@ void show_request(const HttpRequest * req) {
     show_request_line(&req->request_line);
     show_headers(req->headers, req->header_count);
     printf("\n");
-    printf("%s\n", req->body);
+    fwrite(req->body, 1, req->body_len, stdout);
 }

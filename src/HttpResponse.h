@@ -20,6 +20,7 @@ typedef struct {
     size_t header_count;
     const char *body;             // body bytes, may be NULL
     size_t body_len;
+    int head_only;
 } HttpResponse;
 
 typedef HttpResponse (*handler_fn)(const HttpRequest * req);
@@ -29,10 +30,16 @@ typedef struct {
     const handler_fn fn;
 } Route;
 
+typedef struct {
+    const Route *route;        // NULL if no exact match
+    const char *allowed[8];    // methods registered for this path
+    size_t      allowed_count; // 0 → 404. >0 with route==NULL → 405.
+} RouteLookupResult;
+
 HttpResponse* pack_response(const HttpRequest * req, const Dictionary * d);
 
 ssize_t serialize_response(const HttpResponse * resp, char * buffer, size_t buffer_size);
 
-const Route * route_lookup(const Route routes[], size_t count, const char * method, const char * path);
+RouteLookupResult route_lookup(const Route routes[], size_t count, const char *method, const char *path);
 
 #endif //HTTPSERVER_HEADER_H

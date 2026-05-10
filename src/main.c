@@ -7,7 +7,6 @@
 #include <signal.h>
 #include "Connection.h"
 #include "HttpServer.h"
-#include "../lib/Dictionary.h"
 
 #define BACKLOG 10
 
@@ -48,11 +47,15 @@ static HttpResponse not_found(const HttpRequest * request) {
 
 static HttpResponse do_something(const HttpRequest * request) {
     static const ResponseHeader h[1] = { { "Content-Type", "text/html" }, };
-    printf("%s", request->body);
-    static const HttpResponse response = {
+    HttpResponse response = {
         .status = 200, .reason = "OK",
         .headers = h,  .header_count = 1,
+        .body_len = request->body_len,
     };
+    char *body_buf = malloc(request->body_len);
+    // todo: currently the OS reclaims the heap by the process ending
+    memcpy(body_buf, request->body, request->body_len);
+    response.body = body_buf;
     return response;
 }
 

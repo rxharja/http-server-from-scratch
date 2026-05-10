@@ -39,6 +39,12 @@ typedef struct {
     size_t          next_req_offset;
 } ReadBodyResult;
 
+typedef struct {
+    int bytes_to_send;
+    int keep_alive;
+    size_t next_req_offset;
+} KeepAliveStatus;
+
 int get_addr_info(struct addrinfo **serv_info, const char * port);
 
 int bind_socket(const struct addrinfo * servinfo);
@@ -54,6 +60,8 @@ ReadBodyResult recv_chunked_body(int fd, char *buf, size_t have, size_t buf_cap,
 /// invariant: result.body_received is in the set of [0, body_len]
 ReadBodyResult recv_body(int fd, const char *buf, size_t already_have, size_t body_len, char * dest_buf);
 
-HttpResponse handle_connection(int fd, const Route routes[], size_t count);
+HttpResponse synthesize_405(const char * const *allowed, size_t allowed_count, char *allow_buf, size_t allow_buf_size, ResponseHeader *h);
+
+KeepAliveStatus handle_connection(int fd, const Route routes[], size_t count, char *out_buf, size_t out_buf_size);
 
 #endif //HTTPSERVER_CONNECTION_H

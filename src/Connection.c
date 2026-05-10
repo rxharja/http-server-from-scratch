@@ -221,86 +221,104 @@ static HttpResponse to_http_response(const ParseStatus s) {
     }
 }
 
-HttpResponse handle_connection(const int fd, const Route routes[], const size_t count) {
-    ParseResult req_res = {0};
+HttpResponse synthesize_405(const char * const *allowed, const size_t allowed_count, char *allow_buf, const size_t allow_buf_size, ResponseHeader *h) {
+    for (size_t i = 0; i < allowed_count; i++) {
+        if (i > 0) strncat(allow_buf, ", ", allow_buf_size - strlen(allow_buf) - 1);
+        strncat(allow_buf, allowed[i], allow_buf_size - strlen(allow_buf) - 1);
+    }
+    h->key = "Allow";
+    h->value = allow_buf;
+    return (HttpResponse) {
+        .status = 405,                .reason = "Method Not Allowed",
+        .body = "Method Not Allowed", .body_len = sizeof("Method Not Allowed"),
+        .headers = h,                 .header_count = 1
+    };
+}
+
+void keep_alive() {
+    // get
+}
+
+KeepAliveStatus handle_connection(const int fd, const Route routes[], const size_t count, char *out_buf, const size_t out_buf_size) {
+    KeepAliveStatus status = {0};
     HttpResponse res = to_http_response(PARSE_BAD_REQUEST);
+    char res_allow_buf[128] = {0};
+    ResponseHeader allow_h = {0};
 
     HttpRequest *req = malloc(sizeof(HttpRequest));
-    char * buf = malloc(MAX_BODY_LEN * sizeof(char));
+    char *req_buf = malloc(MAX_BODY_LEN * sizeof(char));
 
-    const ReadHeaderResult header_res = recv_header(fd, buf, MAX_HEADER_LEN);
+    const ReadHeaderResult header_res = recv_header(fd, req_buf, MAX_HEADER_LEN);
     if (header_res.status != READ_HEADER_OK) {
-        req_res.status = (header_res.status == READ_HEADER_TOO_LARGE)
-            ? PARSE_HEADER_TOO_LONG
-            : PARSE_BAD_REQUEST;
+        res = to_http_response(header_res.status == READ_HEADER_TOO_LARGE
+            ? PARSE_HEADER_TOO_LONG : PARSE_BAD_REQUEST);
         goto cleanup;
     }
 
-    const ParseResult parse_req_res = parse_request(buf, header_res.total_received, req);
+    const ParseResult parse_req_res = parse_request(req_buf, header_res.total_received, req);
     if (parse_req_res.status != PARSE_OK) {
-        req_res.status =  parse_req_res.status;
+        res = to_http_response(parse_req_res.status);
         goto cleanup;
+    }
+
+    // HTTP/1.1 requires having a host header
+    if (!ascii_ieq(req->request_line.version, "http/1.0")) {
+        Header * host_header = get_header(req->headers, req->header_count, "host");
+        if (!host_header) { res = to_http_response(PARSE_BAD_REQUEST); goto cleanup; }
     }
 
     TransferCoding coding = TE_NONE;
-    ParseStatus status = PARSE_OK;
+    ParseStatus te_status = PARSE_OK;
     for (int i = 0; i < req->header_count; i++) {
-        if (coding == TE_UNSUPPORTED || status != PARSE_OK) break;
+        if (coding == TE_UNSUPPORTED || te_status != PARSE_OK) break;
         if (!ascii_ieq(req->headers[i].key, "transfer-encoding")) continue;
-        status = parse_transfer_encoding(req->headers[i].value, &coding);
+        te_status = parse_transfer_encoding(req->headers[i].value, &coding);
     }
 
-    // parse content-length if no transfer encoding
-    if (coding == TE_UNSUPPORTED || status != PARSE_OK) {
-        set_parse_error(&req_res, status, buf);
-        res = to_http_response(req_res.status);
-        goto cleanup;
-    }
+    if (coding == TE_UNSUPPORTED) { res = to_http_response(PARSE_NOT_IMPLEMENTED); goto cleanup; }
+    if (te_status != PARSE_OK)    { res = to_http_response(te_status);               goto cleanup; }
 
     ReadBodyResult body_res = {0};
     if (coding == TE_CHUNKED) {
         body_res = recv_chunked_body(
             fd,
-            buf + header_res.body_start,
+            req_buf + header_res.body_start,
             header_res.total_received - header_res.body_start,
             MAX_BODY_LEN - header_res.body_start,
             req->body);
+        if (body_res.status != READ_BODY_OK) { res = to_http_response(PARSE_BAD_REQUEST); goto cleanup; }
+        req->body_len = body_res.body_received;
     }
     else {
-        const Header * ct_len_h = get_header(req->headers, req->header_count, "content-length");
-
-        // no C-E and no T-E = no-body
-        if (!ct_len_h) {
-            req_res.status = PARSE_OK;
-            show_request(req);
-        }
+        const Header *ct_len_h = get_header(req->headers, req->header_count, "content-length");
+        if (!ct_len_h) req->body_len = 0;
         else {
             size_t body_len = 0;
-            req_res.status = parse_uint(ct_len_h->value, strlen(ct_len_h->value), 10, MAX_BODY_LEN, &body_len);
-            if (req_res.status != PARSE_OK) goto cleanup;
-            body_res = recv_body(
-                fd,
-                buf + header_res.body_start,
+            const ParseStatus ps = parse_uint(ct_len_h->value, strlen(ct_len_h->value), 10, MAX_BODY_LEN, &body_len);
+            if (ps != PARSE_OK) { res = to_http_response(ps); goto cleanup; }
+            body_res = recv_body(fd,
+                req_buf + header_res.body_start,
                 header_res.total_received - header_res.body_start,
-                body_len,
-                req->body);
-
-            if (body_res.status == READ_BODY_OK) {
-                req_res.status = PARSE_OK;
-                show_request(req);
-            }
-            else {
-                set_parse_error(&req_res, PARSE_BAD_REQUEST, buf);
-                res = to_http_response(req_res.status);
-            }
+                body_len, req->body);
+            if (body_res.status != READ_BODY_OK) { res = to_http_response(PARSE_BAD_REQUEST); goto cleanup; }
+            req->body_len = body_res.body_received;
         }
     }
 
-    const Route * route = route_lookup(routes, count, show_http_method(req->request_line.method), req->request_line.path);
-    if (route == NULL) res = to_http_response(PARSE_NOT_FOUND);
-    else               res = route->fn(req);
+    const HttpMethod method = req->request_line.method == HEAD ? GET : req->request_line.method;
+    const RouteLookupResult route_res = route_lookup(routes, count, show_http_method(method), req->request_line.path);
 
-cleanup:
-    free(req); free(buf);
-    return res;
+    if (route_res.route)                  res = route_res.route->fn(req);
+    else if (route_res.allowed_count > 0) res = synthesize_405(route_res.allowed, route_res.allowed_count, res_allow_buf, sizeof(res_allow_buf), &allow_h);
+    else                                  res = to_http_response(PARSE_NOT_FOUND);
+
+    if (req->request_line.method == HEAD) res.head_only = 1;
+
+    show_request(req);
+
+cleanup: ;
+    const ssize_t n = serialize_response(&res, out_buf, out_buf_size);
+    free(req);
+    free(req_buf);
+    return n;
 }
