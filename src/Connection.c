@@ -265,7 +265,7 @@ KeepAliveStatus handle_connection(const int fd, const Route routes[], const size
     }
 
     // Keep-Alive or close decision, next req offset set.
-    Header * ka_header = get_header(req->headers, req->header_count, "keep-alive");
+    Header * ka_header = get_header(req->headers, req->header_count, "connection");
     if (!ka_header || ascii_ieq("keep-alive", ka_header->value)) status.keep_alive = 1;
 
     TransferCoding coding = TE_NONE;
