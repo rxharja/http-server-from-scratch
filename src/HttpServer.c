@@ -29,10 +29,13 @@ int run_server(const char * port, const Route routes[], const size_t count, cons
 
     printf("server: Listening on port %s...\n", port);
 
+    const struct timeval timeout = { .tv_sec = 30, .tv_usec = 0 };
+
     while (1) {
         sin_size = sizeof their_addr;
 
         const int new_fd = accept(sock_fd, (struct sockaddr *) &their_addr, &sin_size);
+        setsockopt(new_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
         if (new_fd == -1) {
             perror("accept");
@@ -51,9 +54,18 @@ int run_server(const char * port, const Route routes[], const size_t count, cons
 
         if (pid == 0) {
             close(sock_fd);
-            char buf[RESPONSE_BUFFER_SIZE] = {0};
-            while (1) {
-                const KeepAliveStatus status = handle_connection(new_fd, routes, count, buf, RESPONSE_BUFFER_SIZE, status.next_req_offset);
+            ReadBuffer request_buffer = {0};
+            HttpBuffer response_buffer = {0};
+
+            request_buffer.buffer.buffer = malloc(MAX_QUERY_LEN * sizeof(char));
+            request_buffer.buffer.cap = MAX_QUERY_LEN;
+
+            response_buffer.buffer = malloc(RESPONSE_BUFFER_SIZE * sizeof(char));
+            response_buffer.cap = RESPONSE_BUFFER_SIZE;
+
+            size_t requests = 0;
+            while (requests <= MAX_REQUESTS) {
+                const KeepAliveStatus status = handle_connection(new_fd, routes, count, &response_buffer, &request_buffer);
 
                 if (status.bytes_to_send <= 0) {
                     perror("handle_connection");
@@ -61,17 +73,26 @@ int run_server(const char * port, const Route routes[], const size_t count, cons
                     exit(1);
                 }
 
-                send(new_fd, buf, status.bytes_to_send, 0);
+                send(new_fd, response_buffer.buffer, status.bytes_to_send, 0);
+
+                requests++;
 
                 if (!status.keep_alive) break;
-                if (status.next_req_offset > 0) {
-                    memmove(buf, buf + status.next_req_offset, status.next_req_offset - status.bytes_to_send);
-                }
+                if (status.next_req_offset <= 0) continue;
+
+                const size_t bytes_to_move = request_buffer.buffer.size - status.next_req_offset;
+
+                memmove(request_buffer.buffer.buffer,
+                    request_buffer.buffer.buffer + status.next_req_offset,
+                      bytes_to_move);
+
+                request_buffer.already_have = bytes_to_move;
             }
+
             close(new_fd);
+            free(request_buffer.buffer.buffer); free(response_buffer.buffer);
             exit(0);
         }
         close(new_fd);
     }
 }
-

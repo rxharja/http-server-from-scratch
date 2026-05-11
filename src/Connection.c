@@ -190,6 +190,7 @@ ReadBodyResult recv_body(const int fd, const char *buf, const size_t already_hav
 
     return res;
 }
+
 static HttpResponse to_http_response(const ParseStatus s) {
     static const HttpResponse r400 = { .status = 400, .reason = "Bad Request",
                                        .body = "Bad Request", .body_len = 11 };
@@ -222,37 +223,40 @@ static HttpResponse to_http_response(const ParseStatus s) {
     }
 }
 
-HttpResponse synthesize_405(const char * const *allowed, const size_t allowed_count, char *allow_buf, const size_t allow_buf_size, ResponseHeader *h) {
+HttpResponse synthesize_405(const char * const *allowed, const size_t allowed_count, const HttpBuffer * allow_buf, ResponseHeader *h) {
     for (size_t i = 0; i < allowed_count; i++) {
-        if (i > 0) strncat(allow_buf, ", ", allow_buf_size - strlen(allow_buf) - 1);
-        strncat(allow_buf, allowed[i], allow_buf_size - strlen(allow_buf) - 1);
+        if (i > 0) strncat(allow_buf->buffer, ", ", allow_buf->cap - strlen(allow_buf->buffer) - 1);
+        strncat(allow_buf->buffer, allowed[i], allow_buf->cap - strlen(allow_buf->buffer) - 1);
     }
     h->key = "Allow";
-    h->value = allow_buf;
+    h->value = allow_buf->buffer;
     return (HttpResponse) {
         .status = 405,                .reason = "Method Not Allowed",
-        .body = "Method Not Allowed", .body_len = sizeof("Method Not Allowed"),
+        .body = "Method Not Allowed", .body_len = 18,
         .headers = h,                 .header_count = 1
     };
 }
 
-KeepAliveStatus handle_connection(const int fd, const Route routes[], const size_t route_count, char *out_buf, const size_t out_buf_size, const size_t already_have) {
+KeepAliveStatus handle_connection(const int fd, const Route routes[], const size_t route_count, HttpBuffer *res_buffer, ReadBuffer * req_buffer) {
     KeepAliveStatus status = {0};
     HttpResponse res = to_http_response(PARSE_BAD_REQUEST);
-    char res_allow_buf[128] = {0};
     ResponseHeader allow_h = {0};
-
+    char res_allow_buf[128] = {0};
+    HttpBuffer allow_buf = {.buffer = res_allow_buf, .cap = 128 };
     HttpRequest *req = malloc(sizeof(HttpRequest));
-    char *req_buf = malloc(MAX_BODY_LEN * sizeof(char));
+    if (!req) goto cleanup;
 
-    const ReadHeaderResult header_res = recv_header(fd, req_buf, already_have, MAX_HEADER_LEN);
+    const ReadHeaderResult header_res = recv_header(fd, req_buffer->buffer.buffer, req_buffer->already_have, MAX_HEADER_LEN);
     if (header_res.status != READ_HEADER_OK) {
         res = to_http_response(header_res.status == READ_HEADER_TOO_LARGE
             ? PARSE_HEADER_TOO_LONG : PARSE_BAD_REQUEST);
         goto cleanup;
     }
 
-    const ParseResult parse_req_res = parse_request(req_buf, header_res.total_received, req);
+    req_buffer->buffer.size = header_res.total_received;
+
+    // we don't increment buffer size here of the request because we're not reading anymore from the connection
+    const ParseResult parse_req_res = parse_request(req_buffer->buffer.buffer, req_buffer->buffer.size, req);
     if (parse_req_res.status != PARSE_OK) {
         res = to_http_response(parse_req_res.status);
         goto cleanup;
@@ -260,11 +264,11 @@ KeepAliveStatus handle_connection(const int fd, const Route routes[], const size
 
     // HTTP/1.1 requires having a host header
     if (!ascii_ieq(req->request_line.version, "http/1.0")) {
-        Header * host_header = get_header(req->headers, req->header_count, "host");
+        const Header * host_header = get_header(req->headers, req->header_count, "host");
         if (!host_header) { res = to_http_response(PARSE_BAD_REQUEST); goto cleanup; }
 
         // Keep-Alive or close decision, next req offset set.
-        Header * ka_header = get_header(req->headers, req->header_count, "connection");
+        const Header * ka_header = get_header(req->headers, req->header_count, "connection");
         if (!ka_header || ascii_ieq("keep-alive", ka_header->value)) status.keep_alive = 1;
         // otherwise we stay at 0 since it will be connection: close
     }
@@ -285,7 +289,7 @@ KeepAliveStatus handle_connection(const int fd, const Route routes[], const size
     if (coding == TE_CHUNKED) {
         body_res = recv_chunked_body(
             fd,
-            req_buf + header_res.body_start,
+            req_buffer->buffer.buffer + header_res.body_start,
             header_res.total_received - header_res.body_start,
             MAX_BODY_LEN - header_res.body_start,
             req->body);
@@ -300,20 +304,27 @@ KeepAliveStatus handle_connection(const int fd, const Route routes[], const size
             const ParseStatus ps = parse_uint(ct_len_h->value, strlen(ct_len_h->value), 10, MAX_BODY_LEN, &body_len);
             if (ps != PARSE_OK) { res = to_http_response(ps); goto cleanup; }
             body_res = recv_body(fd,
-                req_buf + header_res.body_start,
+                req_buffer->buffer.buffer + header_res.body_start,
                 header_res.total_received - header_res.body_start,
                 body_len, req->body);
-            if (body_res.status != READ_BODY_OK) { res = to_http_response(PARSE_BAD_REQUEST); goto cleanup; }
+
+            if (body_res.status != READ_BODY_OK || body_res.status != READ_BODY_OVERREAD) {
+                res = to_http_response(PARSE_BAD_REQUEST);
+                goto cleanup;
+            }
+
             req->body_len = body_res.body_received;
         }
     }
-    status.next_req_offset = body_res.next_req_offset;
+
+    // absolute offset before next response
+    if (body_res.status == READ_BODY_OVERREAD) status.next_req_offset = header_res.body_start + body_res.next_req_offset;
 
     const HttpMethod method = req->request_line.method == HEAD ? GET : req->request_line.method;
     const RouteLookupResult route_res = route_lookup(routes, route_count, show_http_method(method), req->request_line.path);
 
     if (route_res.route)                  res = route_res.route->fn(req);
-    else if (route_res.allowed_count > 0) res = synthesize_405(route_res.allowed, route_res.allowed_count, res_allow_buf, sizeof(res_allow_buf), &allow_h);
+    else if (route_res.allowed_count > 0) res = synthesize_405(route_res.allowed, route_res.allowed_count, &allow_buf, &allow_h);
     else                                  res = to_http_response(PARSE_NOT_FOUND);
 
     if (req->request_line.method == HEAD) res.head_only = 1;
@@ -321,8 +332,8 @@ KeepAliveStatus handle_connection(const int fd, const Route routes[], const size
     show_request(req);
 
 cleanup: ;
-    status.bytes_to_send = serialize_response(&res, out_buf, out_buf_size, status.keep_alive);
+    status.bytes_to_send = serialize_response(&res, res_buffer->buffer, res_buffer->cap, status.keep_alive);
+    res_buffer->size = status.bytes_to_send;
     free(req);
-    free(req_buf);
     return status;
 }

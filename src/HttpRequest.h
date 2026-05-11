@@ -10,6 +10,7 @@
 #include "HttpRequestLine.h"
 #include "ParseResult.h"
 
+#define REQUEST_BUFFER_SIZE (64 * 1024)
 #define MAX_REASON_PHRASE_LEN 64
 
 /* HTTP REQUEST */

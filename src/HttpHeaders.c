@@ -97,8 +97,8 @@ ParseResult parse_crlf(const char * cur, const char * end) {
 }
 
 // name must be null-terminated
-const Header * get_header(const Header * headers, const size_t count, const char * name) {
-    for (int i = 0; i < count; i++) {
+const Header * get_header(const Header * headers, const size_t header_count, const char * name) {
+    for (int i = 0; i < header_count; i++) {
         const Header *header = &headers[i];
         if (ascii_ieq(header->key, name)) return &headers[i];
     }
