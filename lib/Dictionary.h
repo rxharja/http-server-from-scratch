@@ -27,13 +27,13 @@ typedef struct {
 
 uint64_t key_hash(const char *c);
 
-void dict_insert(Dictionary *d, Key key, void * value);
+int dict_insert(Dictionary* d, Key key, void* value);
 
 void print_dict(const Dictionary* d);
 
 Dictionary* dict_init(void);
 
-void free_dict(Dictionary* d);
+void free_dict(Dictionary* d, void (*destroy)(void*));
 
 void* dict_find(const Dictionary *d, Key key);
 

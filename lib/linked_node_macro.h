@@ -52,15 +52,28 @@
       return NULL;\
    }\
 
-#define linked_node_free_all(T)\
-    static inline void T##_node_free_all(T##_node_t* head) {\
-      T##_node_t* temporary = head;\
-      while(temporary != NULL) {\
-        T##_node_t* next = temporary->next;\
-        free(temporary);\
-        temporary = next;\
-      }\
-    }\
+// #define linked_node_free_all(T)\
+//     static inline void T##_node_free_all(T##_node_t* head) {\
+//       T##_node_t* temporary = head;\
+//       while(temporary != NULL) {\
+//         T##_node_t* next = temporary->next;\
+//         free(temporary);\
+//         temporary = next;\
+//       }\
+//     }\
+
+#define linked_node_free_all(T) \
+    static inline void T##_node_free_all(T##_node_t* head, void (*destroy)(void*)) { \
+        T##_node_t* temporary = head; \
+        while(temporary != NULL) { \
+            T##_node_t* next = temporary->next; \
+            if (destroy && temporary->value) { \
+                destroy(temporary->value); \
+            } \
+            free(temporary); \
+            temporary = next; \
+        } \
+    }
 
 #define linked_node_print(T)\
     static inline void T##_print_nodes(T##_node_t *head, const char* format) {\

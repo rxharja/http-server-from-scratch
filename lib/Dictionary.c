@@ -17,12 +17,15 @@ uint64_t key_hash(const char *c) {
     return hash;
 }
 
-void dict_insert(Dictionary *d, const Key key, void * value) {
+int dict_insert(Dictionary* d, const Key key, void* value) {
     const size_t index = key_hash(key) % BUCKET;
     const Kvp kvp = { key, value };
     Kvp_node_t * node = Kvp_node_init(kvp);
+
     // TODO: handle key collisions --- if keys match, overwrite original
-    Kvp_node_head_insert(&d->bucket[index], node);
+    const Kvp_node_t * n = Kvp_node_head_insert(&d->bucket[index], node);
+    if (n) return 1;
+    return -1;
 }
 
 void print_dict(const Dictionary* d) {
@@ -47,12 +50,12 @@ Dictionary* dict_init(void) {
     return d;
 }
 
-void free_dict(Dictionary* d) {
+void free_dict(Dictionary* d, void (*destroy)(void*)) {
     if (!d) return;
 
     for (size_t i = 0; i < BUCKET; i++) {
         if (d->bucket[i] != NULL) {
-            Kvp_node_free_all(d->bucket[i]);
+            Kvp_node_free_all(d->bucket[i], destroy);
             d->bucket[i] = NULL;
         }
     }
