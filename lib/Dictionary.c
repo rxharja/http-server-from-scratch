@@ -19,14 +19,25 @@ uint64_t key_hash(const char *c) {
 
 int dict_insert(Dictionary* d, const Key key, void* value) {
     const size_t index = key_hash(key) % BUCKET;
+
+    // check if the key exists
+    Kvp_node_t * curr = d->bucket[index];
+    while (curr != NULL) {
+        if (strcmp(curr->value.key, key) == 0) {
+           if (curr->value.value) free(curr->value.value);
+           curr->value.value = value;
+           return 1;
+        }
+        curr = curr->next;
+    }
+
+    // if it does not exist, it is a new key
     const Key persistent_key = strdup(key);
     const Kvp kvp = { persistent_key, value };
     Kvp_node_t * node = Kvp_node_init(kvp);
 
-    // TODO: handle key collisions --- if keys match, overwrite original
     const Kvp_node_t * n = Kvp_node_head_insert(&d->bucket[index], node);
-    if (n) return 1;
-    return -1;
+    return n ? 1 : -1;
 }
 
 void print_dict(const Dictionary* d) {
