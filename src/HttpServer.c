@@ -150,14 +150,11 @@ int cache_static_dir(ContentCache * cache, const char * dir_path, const char * u
         snprintf(fpath, sizeof(fpath), "%s/%s", dir_path, de->d_name);
 
         CachedFile * file = create_cached_file(fpath);
-        cache_file(cache, url, file);
+        if (file) cache_file(cache, url, file);
     }
 
     closedir(dr);
     return 0;
-
-    // store into cache using url_prefix with file name as the key
-    return -1;
 }
 
 int cache_file(ContentCache * cache, const char * url_path, CachedFile * file) {
@@ -167,5 +164,5 @@ int cache_file(ContentCache * cache, const char * url_path, CachedFile * file) {
 void content_cache_free(ContentCache * cache) {
     // pass 'free' because CachedFile is a single allocation
     // flexible array member 'data' is freed along with the struct
-    free_dict(cache, free);
+    free_dict(cache, free_kpv);
 }

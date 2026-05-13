@@ -19,7 +19,8 @@ uint64_t key_hash(const char *c) {
 
 int dict_insert(Dictionary* d, const Key key, void* value) {
     const size_t index = key_hash(key) % BUCKET;
-    const Kvp kvp = { key, value };
+    const Key persistent_key = strdup(key);
+    const Kvp kvp = { persistent_key, value };
     Kvp_node_t * node = Kvp_node_init(kvp);
 
     // TODO: handle key collisions --- if keys match, overwrite original
@@ -64,14 +65,25 @@ void free_dict(Dictionary* d, void (*destroy)(void*)) {
 }
 
 void* dict_find(const Dictionary *d, const Key key) {
-    if (!d) return NULL;
+    if (!d || !key) return NULL;
 
     const size_t index = key_hash(key) % BUCKET;
     const Kvp_node_t * node = d->bucket[index];
 
     while (node != NULL) {
-        if (node->value.key == key) return node->value.value;
+        if (strcmp(node->value.key, key) == 0) return node->value.value;
+        node = node->next;
     }
 
     return NULL;
+}
+
+void free_kpv(void* p) {
+    const Kvp* kvp = (Kvp*)p;
+
+    // 1. Free the CachedFile (the void* value)
+    if (kvp->value) free(kvp->value);
+
+    // 2. Free the key if it's a heap-allocated string
+    if (kvp->key) free((void*)kvp->key);
 }

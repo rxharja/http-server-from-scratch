@@ -37,5 +37,6 @@ void free_dict(Dictionary* d, void (*destroy)(void*));
 
 void* dict_find(const Dictionary *d, Key key);
 
+void free_kvp(void* p);
 
 #endif //HTTPSERVER_DICTIONARY_H_H

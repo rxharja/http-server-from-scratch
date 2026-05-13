@@ -67,8 +67,9 @@
         T##_node_t* temporary = head; \
         while(temporary != NULL) { \
             T##_node_t* next = temporary->next; \
-            if (destroy && temporary->value) { \
-                destroy(temporary->value); \
+            if (destroy) { \
+                /* Pass the address of the struct to the destroyer */ \
+                destroy((void*)&(temporary->value)); \
             } \
             free(temporary); \
             temporary = next; \
