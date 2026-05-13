@@ -46,7 +46,7 @@ typedef struct {
 } HttpBuffer;
 
 typedef struct {
-    HttpBuffer buffer;
+    HttpBuffer http_buffer;
     size_t already_have;
 } ReadBuffer;
 

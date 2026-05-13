@@ -246,17 +246,17 @@ KeepAliveStatus handle_connection(const int fd, const Route routes[], const size
     HttpRequest *req = malloc(sizeof(HttpRequest));
     if (!req) goto cleanup;
 
-    const ReadHeaderResult header_res = recv_header(fd, req_buffer->buffer.buffer, req_buffer->already_have, MAX_HEADER_LEN);
+    const ReadHeaderResult header_res = recv_header(fd, req_buffer->http_buffer.buffer, req_buffer->already_have, MAX_HEADER_LEN);
     if (header_res.status != READ_HEADER_OK) {
         res = to_http_response(header_res.status == READ_HEADER_TOO_LARGE
             ? PARSE_HEADER_TOO_LONG : PARSE_BAD_REQUEST);
         goto cleanup;
     }
 
-    req_buffer->buffer.size = header_res.total_received;
+    req_buffer->http_buffer.size = header_res.total_received;
 
     // we don't increment buffer size here of the request because we're not reading anymore from the connection
-    const ParseResult parse_req_res = parse_request(req_buffer->buffer.buffer, req_buffer->buffer.size, req);
+    const ParseResult parse_req_res = parse_request(req_buffer->http_buffer.buffer, req_buffer->http_buffer.size, req);
     if (parse_req_res.status != PARSE_OK) {
         res = to_http_response(parse_req_res.status);
         goto cleanup;
@@ -289,7 +289,7 @@ KeepAliveStatus handle_connection(const int fd, const Route routes[], const size
     if (coding == TE_CHUNKED) {
         body_res = recv_chunked_body(
             fd,
-            req_buffer->buffer.buffer + header_res.body_start,
+            req_buffer->http_buffer.buffer + header_res.body_start,
             header_res.total_received - header_res.body_start,
             MAX_BODY_LEN - header_res.body_start,
             req->body);
@@ -304,7 +304,7 @@ KeepAliveStatus handle_connection(const int fd, const Route routes[], const size
             const ParseStatus ps = parse_uint(ct_len_h->value, strlen(ct_len_h->value), 10, MAX_BODY_LEN, &body_len);
             if (ps != PARSE_OK) { res = to_http_response(ps); goto cleanup; }
             body_res = recv_body(fd,
-                req_buffer->buffer.buffer + header_res.body_start,
+                req_buffer->http_buffer.buffer + header_res.body_start,
                 header_res.total_received - header_res.body_start,
                 body_len, req->body);
 
@@ -323,9 +323,9 @@ KeepAliveStatus handle_connection(const int fd, const Route routes[], const size
     const HttpMethod method = req->request_line.method == HEAD ? GET : req->request_line.method;
     const RouteLookupResult route_res = route_lookup(routes, route_count, show_http_method(method), req->request_line.path);
 
-    Route *route = route_res.route;
-    if      (route && !route->data) res = route_res.route->handler.fn(req);
-    else if (route && route->data)  res = route_res.route->handler.fn_with_data(req, route->data);
+    const Route *route = route_res.route;
+    if      (route && !route->data)       res = route_res.route->handler.fn(req);
+    else if (route && route->data)        res = route_res.route->handler.fn_with_data(req, route->data);
     else if (route_res.allowed_count > 0) res = synthesize_405(route_res.allowed, route_res.allowed_count, &allow_buf, &allow_h);
     else                                  res = to_http_response(PARSE_NOT_FOUND);
 

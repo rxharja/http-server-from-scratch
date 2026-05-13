@@ -57,8 +57,8 @@ int run_server(const char * port, const Route routes[], const size_t count, cons
             ReadBuffer request_buffer = {0};
             HttpBuffer response_buffer = {0};
 
-            request_buffer.buffer.buffer = malloc(MAX_QUERY_LEN * sizeof(char));
-            request_buffer.buffer.cap = MAX_QUERY_LEN;
+            request_buffer.http_buffer.buffer = malloc(MAX_QUERY_LEN * sizeof(char));
+            request_buffer.http_buffer.cap = MAX_QUERY_LEN;
 
             response_buffer.buffer = malloc(RESPONSE_BUFFER_SIZE * sizeof(char));
             response_buffer.cap = RESPONSE_BUFFER_SIZE;
@@ -80,17 +80,17 @@ int run_server(const char * port, const Route routes[], const size_t count, cons
                 if (!status.keep_alive) break;
                 if (status.next_req_offset <= 0) continue;
 
-                const size_t bytes_to_move = request_buffer.buffer.size - status.next_req_offset;
+                const size_t bytes_to_move = request_buffer.http_buffer.size - status.next_req_offset;
 
-                memmove(request_buffer.buffer.buffer,
-                    request_buffer.buffer.buffer + status.next_req_offset,
+                memmove(request_buffer.http_buffer.buffer,
+                    request_buffer.http_buffer.buffer + status.next_req_offset,
                       bytes_to_move);
 
                 request_buffer.already_have = bytes_to_move;
             }
 
             close(new_fd);
-            free(request_buffer.buffer.buffer); free(response_buffer.buffer);
+            free(request_buffer.http_buffer.buffer); free(response_buffer.buffer);
             exit(0);
         }
         close(new_fd);
