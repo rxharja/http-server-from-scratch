@@ -4,7 +4,7 @@
 
 #ifndef HTTPSERVER_HEADER_H
 #define HTTPSERVER_HEADER_H
-#define RESPONSE_BUFFER_SIZE (64 * 1024)
+#define RESPONSE_BUFFER_SIZE (128 * 1024 * 1024)
 #include "HttpRequest.h"
 #include "../lib/Dictionary.h"
 
@@ -23,7 +23,7 @@ typedef struct {
     int head_only;
 } HttpResponse;
 
-HttpResponse* pack_response(const HttpRequest * req, const Dictionary * d);
+HttpResponse from_static(const HttpRequest * req, const char * buf, size_t len);
 
 ssize_t serialize_response(const HttpResponse * resp, char * buffer, size_t buffer_size, int keep_alive);
 

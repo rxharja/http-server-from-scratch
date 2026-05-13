@@ -16,7 +16,6 @@ typedef struct {
 //TODO: add data structure to cache requested content
 int get_content(const char * path, content * res);
 
-char* get_content_type(const char * path);
 Dictionary * preload_cache(void) {
     Dictionary * d = dict_init();
 
@@ -47,28 +46,6 @@ void trim_path(const char * path, char * trimmed_path) {
 
     strncpy(trimmed_path, path + ptr, MAX_PATH_LEN - 1);
     trimmed_path[MAX_PATH_LEN - 1] = '\0';
-}
-
-static int EndsWith(const char *str, const char *suffix) {
-    if (!str || !suffix) return 0;
-
-    const size_t lenstr = strlen(str);
-    const size_t lensuffix = strlen(suffix);
-
-    if (lensuffix >  lenstr) return 0;
-
-    return strncmp(str + lenstr - lensuffix, suffix, lensuffix) == 0;
-}
-
-char* get_content_type(const char * path) {
-    if (EndsWith(path, ".html")) return "text/html";
-    if (EndsWith(path, ".ico")) return "image/x-icon";
-    if (EndsWith(path, ".jpg") || EndsWith(path, ".jpeg")) return "image/jpeg";
-    if (EndsWith(path, ".png")) return "image/png";
-    if (EndsWith(path, ".css")) return "text/css";
-    if (EndsWith(path, ".js")) return "application/javascript";
-    if (EndsWith(path, ".wasm")) return "application/wasm";
-    return "";
 }
 
 int get_content(const char * path, content * res) {

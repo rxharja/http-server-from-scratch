@@ -81,4 +81,3 @@ ssize_t serialize_response(const HttpResponse * resp, char * buffer, const size_
 
     return offset; // total bytes written
 }
-

@@ -6,6 +6,7 @@
 
 #include <ctype.h>
 #include <stdio.h>
+#include <string.h>
 
 // returns end when no crlf is found
 const char *find_crlf(const char *cur, const char *end) {
@@ -107,3 +108,15 @@ int ascii_ieq(const char * a, const char * b) {
 
     return !*a && !*b;
 }
+
+int ends_with(const char *str, const char *suffix) {
+    if (!str || !suffix) return 0;
+
+    const size_t lenstr = strlen(str);
+    const size_t len_suffix = strlen(suffix);
+
+    if (len_suffix >  lenstr) return 0;
+
+    return strncmp(str + lenstr - len_suffix, suffix, len_suffix) == 0;
+}
+

@@ -45,5 +45,6 @@ int is_field_content_byte(unsigned char c);
 
 int ascii_ieq(const char * a, const char * b);
 
+int ends_with(const char *str, const char *suffix);
 
 #endif //HTTPSERVER_PARSER_H

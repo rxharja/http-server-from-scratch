@@ -321,6 +321,17 @@ KeepAliveStatus handle_connection(const int fd, const Router * router, HttpBuffe
     if (body_res.status == READ_BODY_OVERREAD) status.next_req_offset = header_res.body_start + body_res.next_req_offset;
 
     const HttpMethod method = req->request_line.method == HEAD ? GET : req->request_line.method;
+
+    int found_static = 0;
+    if (method == GET) {
+        CachedFile * file = dict_find(router->static_files, req->request_line.path);
+        if (file) {
+            res = from_cached_file(req, file);
+            if (req->request_line.method == HEAD) res.head_only = 1;
+            goto cleanup;
+        }
+    }
+
     const RouteLookupResult route_res = route_lookup(router->routes, router->route_count, show_http_method(method), req->request_line.path);
 
     const Route *route = route_res.route;

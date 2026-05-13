@@ -51,5 +51,9 @@ int cache_file(ContentCache * cache, const char * url_path, CachedFile * file);
 
 void content_cache_free(ContentCache * cache);
 
+char* get_content_type(const char * path);
+
+HttpResponse from_cached_file(const HttpRequest * req, const CachedFile * file);
+
 
 #endif //HTTPSERVER_HTTPROUTER_H

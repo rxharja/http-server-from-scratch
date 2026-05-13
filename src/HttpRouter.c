@@ -6,6 +6,7 @@
 
 #include <dirent.h>
 #include <sys/stat.h>
+#include "../lib/parser.h"
 
 RouteLookupResult route_lookup(const Route routes[], const size_t count, const char *method, const char *path) {
     RouteLookupResult res = {0};
@@ -47,6 +48,7 @@ static CachedFile * create_cached_file(const char *path) {
     content->len = st.st_size;
     const size_t bytes_read = fread(content->data, 1, st.st_size, file);
     content->data[bytes_read] = '\0';
+    content->content_type = get_content_type(path);
 
     fclose(file);
     return content;
@@ -78,6 +80,7 @@ int cache_static_dir(ContentCache * cache, const char * dir_path, const char * u
         CachedFile * file = create_cached_file(fpath);
         if (file) {
             cache_file(cache, url, file);
+            if (strcmp("index.html", de->d_name) == 0) cache_file(cache, "/", file);
             fcount++;
         }
     }
@@ -94,4 +97,28 @@ void content_cache_free(ContentCache * cache) {
     // pass 'free' because CachedFile is a single allocation
     // flexible array member 'data' is freed along with the struct
     free_dict(cache, free_kvp);
+}
+
+char* get_content_type(const char * path) {
+    if (ends_with(path, ".html")) return "text/html";
+    if (ends_with(path, ".ico")) return "image/x-icon";
+    if (ends_with(path, ".jpg") || ends_with(path, ".jpeg")) return "image/jpeg";
+    if (ends_with(path, ".png")) return "image/png";
+    if (ends_with(path, ".css")) return "text/css";
+    if (ends_with(path, ".js")) return "application/javascript";
+    if (ends_with(path, ".wasm")) return "application/wasm";
+    if (ends_with(path, ".data")) return "application/octet-stream";
+    return "";
+}
+
+HttpResponse from_cached_file(const HttpRequest * req, const CachedFile * file) {
+    const ResponseHeader h[1] = { { "Content-Type", file->content_type } };
+
+    const HttpResponse response = {
+        .status = 200, .reason = "OK",
+        .headers = h,  .header_count = 1,
+        .body = file->data,  .body_len = file->len
+    };
+
+    return response;
 }
