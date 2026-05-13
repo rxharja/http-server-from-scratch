@@ -89,12 +89,8 @@ void* dict_find(const Dictionary *d, const Key key) {
     return NULL;
 }
 
-void free_kpv(void* p) {
+void free_kvp(void* p) {
     const Kvp* kvp = (Kvp*)p;
-
-    // 1. Free the CachedFile (the void* value)
-    if (kvp->value) free(kvp->value);
-
-    // 2. Free the key if it's a heap-allocated string
-    if (kvp->key) free((void*)kvp->key);
+    if (kvp->value) free(kvp->value);    // Free CachedFile (void* value)
+    if (kvp->key) free((void*)kvp->key); // Free key if heap-allocated string
 }

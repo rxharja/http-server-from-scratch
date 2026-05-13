@@ -33,9 +33,23 @@ typedef union {
 
 typedef struct {
     const char *method, *path;
-    const void * data;
     const handler handler;
+    const void * data;
 } Route;
+
+typedef struct {
+    size_t len;
+    const char * content_type;
+    char data[];
+} CachedFile;
+
+typedef Dictionary ContentCache;
+
+typedef struct {
+    const Route * routes;
+    const size_t route_count;
+    ContentCache * static_files;
+} Router;
 
 typedef struct {
     const Route *route;        // NULL if no exact match

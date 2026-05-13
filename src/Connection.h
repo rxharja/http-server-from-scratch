@@ -73,6 +73,6 @@ ReadBodyResult recv_body(int fd, const char *buf, size_t already_have, size_t bo
 
 HttpResponse synthesize_405(const char * const *allowed, size_t allowed_count, const HttpBuffer * allow_buf, ResponseHeader *h);
 
-KeepAliveStatus handle_connection(int fd, const Route routes[], size_t route_count, HttpBuffer *res_buffer, ReadBuffer *req_buffer);
+KeepAliveStatus handle_connection(int fd, Router * router, HttpBuffer *res_buffer, ReadBuffer *req_buffer);
 
 #endif //HTTPSERVER_CONNECTION_H

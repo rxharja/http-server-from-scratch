@@ -13,7 +13,7 @@
 
 #include "Connection.h"
 
-int run_server(const char * port, const Route routes[], const size_t count, const size_t backlog) {
+int run_server(const char * port, const Router * router, const size_t backlog) {
     int sock_fd;
     struct addrinfo *serv_info = 0;
     struct sockaddr_storage their_addr;
@@ -114,7 +114,7 @@ static CachedFile * create_cached_file(const char *path) {
         return NULL;
     }
 
-    FILE *file = fopen(path, "rb");
+    FILE *file = fopen(path, "r");
     if (file == NULL) {
         free(content);
         perror("Error opening file");
@@ -124,6 +124,7 @@ static CachedFile * create_cached_file(const char *path) {
     content->len = st.st_size;
     const size_t bytes_read = fread(content->data, 1, st.st_size, file);
     content->data[bytes_read] = '\0';
+    printf("%s\n", content->data);
 
     fclose(file);
     return content;
@@ -146,7 +147,9 @@ int cache_static_dir(ContentCache * cache, const char * dir_path, const char * u
         char url[512];
         char fpath[512];
 
-        snprintf(url, sizeof(url), "%s/%s", url_prefix, de->d_name);
+        if (url_prefix) snprintf(url, sizeof(url), "%s/%s", url_prefix, de->d_name);
+        else snprintf(url, sizeof(url), "/%s", de->d_name);
+
         snprintf(fpath, sizeof(fpath), "%s/%s", dir_path, de->d_name);
 
         CachedFile * file = create_cached_file(fpath);
@@ -164,5 +167,5 @@ int cache_file(ContentCache * cache, const char * url_path, CachedFile * file) {
 void content_cache_free(ContentCache * cache) {
     // pass 'free' because CachedFile is a single allocation
     // flexible array member 'data' is freed along with the struct
-    free_dict(cache, free_kpv);
+    free_dict(cache, free_kvp);
 }

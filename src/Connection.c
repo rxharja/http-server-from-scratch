@@ -237,7 +237,7 @@ HttpResponse synthesize_405(const char * const *allowed, const size_t allowed_co
     };
 }
 
-KeepAliveStatus handle_connection(const int fd, const Route routes[], const size_t route_count, HttpBuffer *res_buffer, ReadBuffer * req_buffer) {
+KeepAliveStatus handle_connection(const int fd, const Router * router, HttpBuffer *res_buffer, ReadBuffer * req_buffer) {
     KeepAliveStatus status = {0};
     HttpResponse res = to_http_response(PARSE_BAD_REQUEST);
     ResponseHeader allow_h = {0};
@@ -321,7 +321,7 @@ KeepAliveStatus handle_connection(const int fd, const Route routes[], const size
     if (body_res.status == READ_BODY_OVERREAD) status.next_req_offset = header_res.body_start + body_res.next_req_offset;
 
     const HttpMethod method = req->request_line.method == HEAD ? GET : req->request_line.method;
-    const RouteLookupResult route_res = route_lookup(routes, route_count, show_http_method(method), req->request_line.path);
+    const RouteLookupResult route_res = route_lookup(router->routes, router->route_count, show_http_method(method), req->request_line.path);
 
     const Route *route = route_res.route;
     if      (route && !route->data)       res = route_res.route->handler.fn(req);

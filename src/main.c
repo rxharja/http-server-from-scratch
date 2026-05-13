@@ -73,22 +73,29 @@ int main(const int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    sa.sa_handler = sigchild_handler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESTART;
-    if (sigaction(SIGCHLD, &sa, NULL) == -1) {
-        perror("sigaction");
-        exit(EXIT_FAILURE);
-    }
-
-    // Dictionary * content_cache = preload_cache();
-    const Route routes[3] = {
-        { "GET", "/", hello },
+    Route routes[2] = {
         { "GET", "/test", not_found },
         { "POST", "/test", do_something }
     };
 
-    run_server("8080", routes, 3, BACKLOG);
+    const Router router = {
+        .static_files = content_cache_create(),
+        .route_count = 2,
+        .routes = routes
+    };
+
+    cache_static_dir(router.static_files, "test", NULL);
+
+    sa.sa_handler = sigchild_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    if (sigaction(SIGCHLD, &sa, NULL) == -1) {
+        content_cache_free(router.static_files);
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+
+    run_server("8080", &router, BACKLOG);
 
     return EXIT_SUCCESS;
 }
