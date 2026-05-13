@@ -12,14 +12,14 @@ These bite at any HTTP version.
 - [x] `parse_http_method` returns `PUT` for `"DELETE"` at `HttpRequest.c:16`
 - [x] 404 reason phrase is `"File not Found"`; canonical is `Not Found`.
 - [x] Replace single `recv()` at `main.c:166` with a read loop that grows the buffer until `\r\n\r\n`, then up to `Content-Length` more bytes
-- [ ] Replace `strtok` parser — mutates input, not reentrant, collapses repeated CRLF. Hand-roll a tokenizer that tracks positions.
-- [ ] Header parser at `HttpRequest.c:51` assumes exactly `": "` after the colon. Spec allows zero-or-more OWS on either side.
-- [ ] `free_response` at `HttpRequest.c:267` `free()`s cached `Content*` on cache hits. Add an `owns_content` flag, or always copy.
-- [ ] `res->content = malloc(...)` at `HttpRequest.c:168` is overwritten by `dict_find` at line 181 — leak on every cache hit.
-- [ ] `sendbuf` is a 100 KB stack array in `main.c`. Required for serving WASM payloads. Send headers and body directly to the socket in two `send()` calls instead of pre-serializing.
-- [ ] No URL decoding; no path/query separation. `/foo%20bar?x=1` opens a literal file named that.
+- [x] Header parser at `HttpRequest.c:51` assumes exactly `": "` after the colon. Spec allows zero-or-more OWS on either side.
+- [x] No URL decoding; no path/query separation. `/foo%20bar?x=1` opens a literal file named that.
+- [x] Replace `strtok` parser — mutates input, not reentrant, collapses repeated CRLF. Hand-roll a tokenizer that tracks positions.
+- [x] `free_response` at `HttpRequest.c:267` `free()`s cached `Content*` on cache hits. Add an `owns_content` flag, or always copy.
+- [x] `res->content = malloc(...)` at `HttpRequest.c:168` is overwritten by `dict_find` at line 181 — leak on every cache hit.
+- [x] `sendbuf` is a 100 KB stack array in `main.c`. Required for serving WASM payloads. Send headers and body directly to the socket in two `send()` calls instead of pre-serializing.
 - [ ] No connection-level read timeout. Use `SO_RCVTIMEO` or `select`/`poll`.
-- [ ] `trim_path` strips leading `.` and `/` only — does nothing for `..` segments mid-path. Resolve the path and reject anything escaping the document root.
+- [x] `trim_path` strips leading `.` and `/` only — does nothing for `..` segments mid-path. Resolve the path and reject anything escaping the document root.
 
 ## HTTP/0.9
 
@@ -28,7 +28,7 @@ Effectively done — you exceed strict 0.9 by always emitting a status line and 
 - [x] Accept `GET`
 - [x] Handle zero request headers
 - [x] Close connection after the body is written
-- [ ] (Optional) Accept the bare `GET /path\r\n` form with no version token. Almost no client speaks this anymore — skip unless curious.
+- [x] (Optional) Accept the bare `GET /path\r\n` form with no version token. Almost no client speaks this anymore — skip unless curious.
 
 ## HTTP/1.0
 
@@ -38,13 +38,13 @@ Effectively done — you exceed strict 0.9 by always emitting a status line and 
 - [x] `GET`
 - [x] `Content-Type` and `Content-Length` response headers
 - [x] Close after each response
-- [ ] `HEAD` (same headers as `GET`, no body)
-- [ ] `POST` (currently 405) — even acknowledging with 200 and discarding the body is a starting point
-- [ ] Read request body using `Content-Length`
-- [ ] `Date` response header (RFC 7231 IMF-fixdate)
-- [ ] `Server` response header
-- [ ] `400 Bad Request` for malformed start lines / headers
-- [ ] `501 Not Implemented` for unknown methods (separate from `405`)
+- [X] `HEAD` (same headers as `GET`, no body)
+- [X] `POST` (currently 405) — even acknowledging with 200 and discarding the body is a starting point
+- [X] Read request body using `Content-Length`
+- [X] `Date` response header (RFC 7231 IMF-fixdate)
+- [x] `Server` response header, no plan to implement
+- [x] `400 Bad Request` for malformed start lines / headers
+- [x] `501 Not Implemented` for unknown methods (separate from `405`)
 
 ## HTTP/1.1
 
@@ -53,19 +53,19 @@ The largest milestone. Five sub-stages.
 ### 1.1a — basics
 
 - [x] Advertise `HTTP/1.1`
-- [ ] Require `Host` header → `400` if missing
+- [x] Require `Host` header → `400` if missing
 - [ ] Persistent connections by default; loop reading requests on the same fd
 - [ ] Per-connection idle timeout and per-request header-read timeout
-- [ ] Always emit `Date`
-- [ ] Honor `Connection: close`
+- [x] Always emit `Date`
+- [x] Honor `Connection: close`
 
 ### 1.1b — bodies and framing
 
-- [ ] Decode chunked requests (`chunk-size [;ext]\r\n data \r\n`, terminator `0\r\n\r\n`, optional trailers)
+- [x] Decode chunked requests (`chunk-size [;ext]\r\n data \r\n`, terminator `0\r\n\r\n`, optional trailers)
 - [ ] Encode chunked responses when length isn't known up front
 - [ ] `Expect: 100-continue` → emit `HTTP/1.1 100 Continue\r\n\r\n` before reading body, or reject with `417`
 - [ ] Pipelining: queue and reply in arrival order
-- [ ] Reject requests with both `Transfer-Encoding` and `Content-Length` (smuggling vector)
+- [x] Reject requests with both `Transfer-Encoding` and `Content-Length` (smuggling vector)
 
 ### 1.1c — caching and conditionals
 
@@ -86,8 +86,8 @@ The largest milestone. Five sub-stages.
 ### 1.1e — methods and status surface
 
 - [ ] `OPTIONS` (and `OPTIONS *`) advertising via `Allow:`
-- [ ] `PUT`, `DELETE` if you want write semantics
-- [ ] `405` should include `Allow:`
+- [x] `PUT`, `DELETE` if you want write semantics
+- [x] `405` should include `Allow:`
 - [ ] `408`, `413`, `414`, `415`
 
 ### 1.1f — concurrency rework
@@ -100,7 +100,7 @@ Separate wire protocol; build it as a parallel module sharing the request/respon
 
 ### Refactor (prerequisite)
 
-- [ ] Split `HttpRequest`/`HttpResponse` and handler logic into a transport-agnostic core. `parse_request` / `serialize_response` move into a 1.x wire module; an h2 module produces the same structs.
+- [x] Split `HttpRequest`/`HttpResponse` and handler logic into a transport-agnostic core. `parse_request` / `serialize_response` move into a 1.x wire module; an h2 module produces the same structs.
 
 ### Negotiation
 

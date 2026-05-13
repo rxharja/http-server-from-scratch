@@ -2,95 +2,18 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
-#include <string.h>
 #include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <arpa/inet.h>
 #include <sys/wait.h>
 #include <signal.h>
-
-#include "HttpResponse.h"
-#include "HttpRequest.h"
-#include "../lib/Dictionary.h"
+#include "Connection.h"
+#include "HttpServer.h"
 
 #define BACKLOG 10
 
-int get_addr_info(struct addrinfo **serv_info, const char * port) {
-    struct addrinfo hints = {0};
-    int rv;
-
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
-
-    if ((rv = getaddrinfo(NULL, port, &hints, serv_info)) != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-        return EXIT_FAILURE;
-    }
-
-    return EXIT_SUCCESS;
-}
-
-int bind_socket(const struct addrinfo * servinfo) {
-    const int yes = 1;
-    int sockfd = 0;
-    const struct addrinfo * p;
-
-    for (p = servinfo; p != NULL; p = p->ai_next) {
-        if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
-            perror("server: socket");
-            continue;
-        }
-
-        if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
-            perror("setsockopt");
-            return EXIT_FAILURE;
-        }
-
-        if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
-            close(sockfd);
-            perror("bind");
-            continue;
-        }
-
-        break;
-    }
-
-    if (p == NULL) {
-        fprintf(stderr, "server: failed to bind\n");
-        return EXIT_FAILURE;
-    }
-
-    return sockfd;
-}
-
 void sigchild_handler(int s) {
     int saved_errno = errno;
-
     while (waitpid(-1, NULL, WNOHANG) > 0) {}
-
     errno = saved_errno;
-}
-
-void *get_in_addr(struct sockaddr *sa) {
-    if (sa->sa_family == AF_INET) {
-        return &((struct sockaddr_in*)sa)->sin_addr;
-    }
-
-    return &((struct sockaddr_in6*)sa)->sin6_addr;
-}
-
-int valid_port(const char * str) {
-    char *endptr;
-    errno = 0;
-
-    const long num = strtol(str, &endptr, 10);
-
-    if (errno != 0 || *endptr != '\0' || endptr == str) return 1;
-    if (num <= 0 || num > 65535) return 1;
-    return 0;
 }
 
 static volatile sig_atomic_t keepRunning = 1;
@@ -100,19 +23,45 @@ void intHandler(const int sig) {
     keepRunning = 0;
 }
 
+static HttpResponse hello(const HttpRequest * request) {
+    static const ResponseHeader h[1] = { { "Content-Type", "text/html" }, };
+    static const char body[] = "<h1>Hello, World!</h1>\n";
+    static const HttpResponse response = {
+        .status = 200, .reason = "OK",
+        .headers = h,  .header_count = 1,
+        .body = body,  .body_len = sizeof body - 1
+    };
+    return response;
+}
 
-int main(int argc, char *argv[]) {
+static HttpResponse not_found(const HttpRequest * request) {
+    static const ResponseHeader h[1] = { { "Content-Type", "text/html" }, };
+    static const char body[] = "<h1>Nothing here...</h1>\n";
+    static const HttpResponse response = {
+        .status = 404, .reason = "Not Found",
+        .headers = h,  .header_count = 1,
+        .body = body,  .body_len = sizeof body - 1
+    };
+    return response;
+}
+
+static HttpResponse do_something(const HttpRequest * request) {
+    static const ResponseHeader h[1] = { { "Content-Type", "text/html" }, };
+    HttpResponse response = {
+        .status = 200, .reason = "OK",
+        .headers = h,  .header_count = 1,
+        .body_len = request->body_len,
+    };
+    char *body_buf = malloc(request->body_len);
+    // todo: currently the OS reclaims the heap by the process ending
+    memcpy(body_buf, request->body, request->body_len);
+    response.body = body_buf;
+    return response;
+}
+
+int main(const int argc, char *argv[]) {
     signal(SIGINT, intHandler);
-
-    int sockfd;
-    struct addrinfo *servinfo = 0;
-    struct sockaddr_storage their_addr;
-    socklen_t sin_size;
     struct sigaction sa;
-    char s[INET6_ADDRSTRLEN];
-    char header_buf[8192]; // todo: turn this into not magic
-    char recvbuf[1024];
-    char sendbuf[100000];
 
     if (argc != 2) {
        printf("Usage: %s <port>\n", argv[0]);
@@ -124,83 +73,29 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    if (get_addr_info(&servinfo, argv[1]) != EXIT_SUCCESS) {
-        exit(EXIT_FAILURE);
-    }
+    Route routes[2] = {
+        { "GET", "/test", not_found },
+        { "POST", "/test", do_something }
+    };
 
-    if ((sockfd = bind_socket(servinfo)) < 3) {
-        exit(EXIT_FAILURE);
-    }
+    const Router router = {
+        .static_files = content_cache_create(),
+        .route_count = 2,
+        .routes = routes
+    };
 
-    freeaddrinfo(servinfo);
-
-    if (listen(sockfd, BACKLOG) == -1) {
-        perror("listen");
-        exit(EXIT_FAILURE);
-    }
+    cache_static_dir(router.static_files, "test", NULL);
 
     sa.sa_handler = sigchild_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
     if (sigaction(SIGCHLD, &sa, NULL) == -1) {
+        content_cache_free(router.static_files);
         perror("sigaction");
         exit(EXIT_FAILURE);
     }
 
-    printf("server: Listening on port %s...\n", argv[1]);
-
-    Dictionary * content_cache = preload_cache();
-
-    while (keepRunning) {
-        sin_size = sizeof their_addr;
-
-        const int new_fd = accept(sockfd, (struct sockaddr *) &their_addr, &sin_size);
-
-        if (new_fd == -1) {
-            perror("accept");
-            continue;
-        }
-
-        inet_ntop(their_addr.ss_family, get_in_addr((struct sockaddr *)&their_addr), s, sizeof s);
-        // printf("origin: %s\n", s);
-
-        if (!fork()) {
-            close(sockfd);
-
-            const ReadHeaderResult header_res = recv_header(new_fd, header_buf, 8192);
-            if (header_res.status == READ_HEADER_PEER_CLOSED) close(new_fd); // maybe send 400 here
-            if (header_res.status == READ_HEADER_IO_ERROR) close(new_fd);
-            if (header_res.status == READ_HEADER_TOO_LARGE) close(new_fd); // send a 431 here
-
-            recv_header(new_fd, header_buf, 8192);
-
-            HttpRequest *request = malloc(sizeof(HttpRequest));
-            parse_request(header_buf, request); // todo: res.body_start needed here
-            show_request(request);
-            memset(recvbuf, 0, sizeof(recvbuf));
-
-            HttpResponse *response = pack_response(request, content_cache);
-
-            free(request);
-
-            const int res_len = serialize_response(response, sendbuf, sizeof(sendbuf) );
-
-            if (send(new_fd, sendbuf, res_len, 0) == -1) {
-                perror("send");
-            }
-
-            free_response(response);
-
-            memset(sendbuf, 0, sizeof(sendbuf));
-
-            close(new_fd);
-            exit(0);
-        }
-
-        close(new_fd);
-    }
-
-    free_dict(content_cache);
+    run_server("8080", &router, BACKLOG);
 
     return EXIT_SUCCESS;
 }

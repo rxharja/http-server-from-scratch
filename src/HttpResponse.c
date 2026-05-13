@@ -3,214 +3,97 @@
 //
 
 #include "HttpResponse.h"
-#include <errno.h>
 #include <string.h>
-#include <sys/socket.h>
+#include <time.h>
+#include "../lib/parser.h"
 
-Dictionary * preload_cache(void) {
-    Dictionary * d = dict_init();
-
-    Content * styles = malloc(sizeof(Content));
-    Content * index = malloc(sizeof(Content));
-    Content * fourOhfour = malloc(sizeof(Content));
-    Content * img = malloc(sizeof(Content));
-
-    get_content("styles.css", styles);
-    get_content("index.html", index);
-    get_content("404.html", fourOhfour);
-    get_content("img.jpg", img);
-
-    dict_insert(d, "styles.css", styles);
-    dict_insert(d, "index.html", index);
-    dict_insert(d, "404.html", fourOhfour);
-    dict_insert(d, "img.jpg", img);
-
-    return d;
+static int write_header(char * write_buf, const size_t cap, const ResponseHeader * header) {
+    int written = 0;
+    written = snprintf(write_buf, cap, "%s: %s\r\n", header->key, header->value);
+    if (written < 0 || (size_t)written >= cap) return -1;
+    return written;
 }
 
-void trim_path(const char * path, char * trimmed_path) {
-    int ptr = 0;
+static size_t write_current_time(char * write_buf, const size_t cap) {
+    // 1. Get the current calendar time
+    const time_t now = time(NULL);
+    if (now == (time_t)-1) return 0;
 
-    while (path[ptr] == '.' || path[ptr] == '/') {
-        ptr++;
-    }
+    // 2. Convert to GMT/UTC structure
+    const struct tm *gmt_info = gmtime(&now);
 
-    strncpy(trimmed_path, path + ptr, MAX_PATH_LEN - 1);
-    trimmed_path[MAX_PATH_LEN - 1] = '\0';
+    // 3. Format the time: %d (day), %b (abbreviated month), %Y (year), etc.
+
+    return strftime(write_buf, cap, "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", gmt_info);
 }
 
-static int EndsWith(const char *str, const char *suffix) {
-    if (!str || !suffix) return 0;
-
-    const size_t lenstr = strlen(str);
-    const size_t lensuffix = strlen(suffix);
-
-    if (lensuffix >  lenstr) return 0;
-
-    return strncmp(str + lenstr - lensuffix, suffix, lensuffix) == 0;
+static int write_connection(char * write_buf, const size_t cap, const int keep_alive) {
+    int written = 0;
+    char * format = keep_alive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
+    return snprintf(write_buf, cap, format);
 }
 
-char* get_content_type(const char * path) {
-    if (EndsWith(path, ".html")) return "text/html";
-    if (EndsWith(path, ".ico")) return "image/x-icon";
-    if (EndsWith(path, ".jpg") || EndsWith(path, ".jpeg")) return "image/jpeg";
-    if (EndsWith(path, ".png")) return "image/png";
-    if (EndsWith(path, ".css")) return "text/css";
-    if (EndsWith(path, ".js")) return "application/javascript";
-    if (EndsWith(path, ".wasm")) return "application/wasm";
-    return "";
-}
-
-int get_content(const char * path, Content * res) {
-    char trimmed_path[MAX_PATH_LEN];
-
-    trim_path(path, trimmed_path);
-
-    FILE *fp = fopen(trimmed_path, "rb");
-
-    if (fp != NULL) {
-        if (fseek(fp, 0L, SEEK_END) == 0) {
-            const long bufsize = ftell(fp);
-
-            if (bufsize == -1) return 500;
-
-            res->body = malloc(sizeof(char) * (bufsize + 1));
-            res->body_len = bufsize;
-
-            if (fseek(fp, 0L, SEEK_SET) != 0) return 500;
-
-            size_t newLen = fread(res->body, sizeof(char), bufsize, fp);
-
-            if ( ferror( fp ) != 0 ) {
-                fputs("Error reading file", stderr);
-            }
-            else {
-                res->body[newLen++] = '\0';
-            }
-        }
-
-        fclose(fp);
-    }
-    else {
-        return 404;
-    }
-
-    return 200;
-}
-
-
-void set_header(HttpResponse *res, const char *name, const char *value) {
-    if (res->headerCount < MAX_HEADERS) {
-        strncpy(res->headers[res->headerCount].key, name, MAX_HEADER_KEY_LEN);
-        strncpy(res->headers[res->headerCount].value, value, MAX_HEADER_VALUE_LEN);
-        res->headerCount++;
-    }
-}
-
-HttpResponse* pack_response(const HttpRequest * req, const Dictionary * d) {
-    HttpResponse * res = malloc(sizeof(HttpResponse));
-    res->content = malloc(sizeof(Content));
-
-    if (res == NULL || res->content == NULL) {
-        exit(EXIT_FAILURE);
-    }
-
-    strcpy(res->version ,"HTTP/1.1");
-    res->version[strlen("HTTP/1.1")] = '\0';
-
-    switch (req->method) {
-        case GET:
-            if (strcmp(req->path, "/") == 0) {
-                res->statusCode = 200;
-                res->content = dict_find(d, "index.html");
-            }
-            else {
-                Content * c = dict_find(d, req->path);
-                if (c == NULL) {
-                    res->statusCode = get_content(req->path, res->content);
-                }
-                else {
-                    res->statusCode = 200;
-                }
-            }
-
-            switch (res->statusCode) {
-                case 200: {
-                    const char * ok = "OK";
-                    strcpy(res->reasonPhrase, ok);
-                    res->reasonPhrase[strlen(ok)] = '\0';
-                    set_header(res, "Content-Type", get_content_type(req->path));
-
-                    char len[20];
-                    sprintf(len, "%lu", res->content->body_len);
-                    set_header(res, "Content-Length", len);
-                    set_header(res, "Cache-Control", "max-age=86400");
-                    break;
-                }
-                case 404: {
-                    const char * notFound = "Not Found";
-                    strcpy(res->reasonPhrase, notFound);
-                    res->reasonPhrase[strlen(notFound)] = '\0';
-                    res->content = dict_find(d, "404.html");
-                    char len404[20];
-                    sprintf(len404, "%lu", res->content->body_len);
-                    set_header(res, "Content-Length", len404);
-                    set_header(res, "Cache-Control", "max-age=86400");
-                    break;
-                }
-                default: {
-                    const char * error = "Internal Server Error";
-                    strcpy(res->reasonPhrase, error);
-                    res->reasonPhrase[strlen(error)] = '\0';
-                    break;
-                }
-            }
-            break;
-
-        default:
-            res->statusCode = 405;
-            const char * reason = "Method not allowed";
-            strcpy(res->reasonPhrase, reason);
-            res->reasonPhrase[strlen(reason)] = '\0';
-            break;
-    }
-
-    return res;
-}
-
-int serialize_response(const HttpResponse * resp, char * buffer, size_t buffer_size) {
-    int offset = 0;
+ssize_t serialize_response(const HttpResponse * resp, char * buffer, const size_t buffer_size, const int keep_alive) {
+    ssize_t offset = 0;
 
     // Start line
     int written = snprintf(buffer + offset, buffer_size - offset,
-                           "%s %d %s\r\n", resp->version, resp->statusCode, resp->reasonPhrase);
-    if (written < 0 || written >= buffer_size - offset) return -1;
+        "%s %d %s\r\n", "HTTP/1.1", resp->status, resp->reason);
+
+    if (written < 0 || (size_t)written > buffer_size - offset) return -1;
     offset += written;
 
+    // current time in GMT
+    const size_t time_written = write_current_time(buffer + offset, buffer_size - offset);
+    if (time_written == 0) return -1;
+    offset += time_written;
+
     // Headers
-    for (int i = 0; i < resp->headerCount; i++) {
+    int saw_content_length = 0;
+    for (int i = 0; i < resp->header_count; i++) {
+        written = write_header(buffer + offset, buffer_size - offset, &resp->headers[i]);
+        if (written < 0 ) return -1;
+        offset += written;
+        if (ascii_ieq(resp->headers[i].key, "content-length")) saw_content_length = 1;
+    }
+
+    if (!saw_content_length && resp->body_len > 0) {
         written = snprintf(buffer + offset, buffer_size - offset,
-                           "%s: %s\r\n", resp->headers[i].key, resp->headers[i].value);
-        if (written < 0 || written >= buffer_size - offset) return -1;
+            "Content-Length: %zu\r\n", resp->body_len);
+        if (written < 0 || (size_t)written >= buffer_size - offset) return -1;
         offset += written;
     }
 
+    written = write_connection(buffer + offset, buffer_size - offset, keep_alive);
+    if (written < 0 || (size_t)written >= buffer_size - offset) return -1;
+    offset += written;
+
     // Blank line
     if (offset + 2 >= buffer_size) return -1;
-    buffer[offset++] = '\r';
-    buffer[offset++] = '\n';
+    buffer[offset++] = '\r'; buffer[offset++] = '\n';
 
     // Body
-    if (resp->content->body && resp->content->body_len > 0) {
-        if (offset + resp->content->body_len >= buffer_size) return -1;
-        memcpy(buffer + offset, resp->content->body, resp->content->body_len);
-        offset += resp->content->body_len;
+    if (!resp->head_only && resp->body && resp->body_len > 0) {
+        if (offset + resp->body_len > buffer_size) return -1;
+        memcpy(buffer + offset, resp->body, resp->body_len);
+        offset += resp->body_len;
     }
 
     return offset; // total bytes written
 }
 
-void free_response(HttpResponse * res) {
-    free(res->content);
-    free(res);
+RouteLookupResult route_lookup(const Route routes[], const size_t count, const char *method, const char *path) {
+    RouteLookupResult res = {0};
+    for (int i = 0; i < count; i++) {
+        const int path_match = strcmp(path, routes[i].path) == 0;
+        if (!path_match) continue;
+        if (strcmp(method, routes[i].method) == 0) {
+            res.route = &routes[i];
+            return res;
+        }
+        if (res.allowed_count < 8) {
+            res.allowed[res.allowed_count++] = routes[i].method;
+        }
+    }
+    return res;
 }
