@@ -29,7 +29,7 @@ static size_t write_current_time(char * write_buf, const size_t cap) {
 
 static int write_connection(char * write_buf, const size_t cap, const int keep_alive) {
     int written = 0;
-    char * format = keep_alive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
+    const char * format = keep_alive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
     return snprintf(write_buf, cap, format);
 }
 
@@ -82,18 +82,3 @@ ssize_t serialize_response(const HttpResponse * resp, char * buffer, const size_
     return offset; // total bytes written
 }
 
-RouteLookupResult route_lookup(const Route routes[], const size_t count, const char *method, const char *path) {
-    RouteLookupResult res = {0};
-    for (int i = 0; i < count; i++) {
-        const int path_match = strcmp(path, routes[i].path) == 0;
-        if (!path_match) continue;
-        if (strcmp(method, routes[i].method) == 0) {
-            res.route = &routes[i];
-            return res;
-        }
-        if (res.allowed_count < 8) {
-            res.allowed[res.allowed_count++] = routes[i].method;
-        }
-    }
-    return res;
-}
