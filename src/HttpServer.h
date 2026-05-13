@@ -11,7 +11,7 @@
 typedef struct {
     size_t len;
     const char * content_type;
-    const char * data;
+    char data[];
 } CachedFile;
 
 typedef Dictionary ContentCache;
@@ -29,7 +29,7 @@ ContentCache * content_cache_create();
 
 int cache_static_dir(ContentCache * cache, const char * dir_path, const char * url_prefix);
 
-int cache_file(ContentCache * cache, const char * url_path, const CachedFile * file);
+int cache_file(ContentCache * cache, const char * url_path, CachedFile * file);
 
 void content_cache_free(ContentCache * cache);
 
