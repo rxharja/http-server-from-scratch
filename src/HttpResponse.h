@@ -24,10 +24,17 @@ typedef struct {
 } HttpResponse;
 
 typedef HttpResponse (*handler_fn)(const HttpRequest * req);
+typedef HttpResponse (*handler_fn_with_data)(const HttpRequest * req, const void * data);
+
+typedef union {
+    handler_fn fn;
+    handler_fn_with_data fn_with_data;
+} handler;
 
 typedef struct {
     const char *method, *path;
-    const handler_fn fn;
+    const void * data;
+    const handler handler;
 } Route;
 
 typedef struct {

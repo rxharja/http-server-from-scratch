@@ -59,8 +59,7 @@ static HttpResponse do_something(const HttpRequest * request) {
     return response;
 }
 
-
-int main(int argc, char *argv[]) {
+int main(const int argc, char *argv[]) {
     signal(SIGINT, intHandler);
     struct sigaction sa;
 
@@ -90,7 +89,6 @@ int main(int argc, char *argv[]) {
     };
 
     run_server("8080", routes, 3, BACKLOG);
-    // free_dict(content_cache);
 
     return EXIT_SUCCESS;
 }

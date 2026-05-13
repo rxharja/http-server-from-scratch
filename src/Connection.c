@@ -323,7 +323,9 @@ KeepAliveStatus handle_connection(const int fd, const Route routes[], const size
     const HttpMethod method = req->request_line.method == HEAD ? GET : req->request_line.method;
     const RouteLookupResult route_res = route_lookup(routes, route_count, show_http_method(method), req->request_line.path);
 
-    if (route_res.route)                  res = route_res.route->fn(req);
+    Route *route = route_res.route;
+    if      (route && !route->data) res = route_res.route->handler.fn(req);
+    else if (route && route->data)  res = route_res.route->handler.fn_with_data(req, route->data);
     else if (route_res.allowed_count > 0) res = synthesize_405(route_res.allowed, route_res.allowed_count, &allow_buf, &allow_h);
     else                                  res = to_http_response(PARSE_NOT_FOUND);
 

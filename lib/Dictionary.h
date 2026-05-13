@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include "linked_node_macro.h"
 
-#define BUCKET 32
+#define BUCKET 1024
 
 typedef const char* Key;
 

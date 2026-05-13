@@ -96,3 +96,11 @@ int run_server(const char * port, const Route routes[], const size_t count, cons
         close(new_fd);
     }
 }
+
+ContentCache * content_cache_create() {
+    return dict_init();
+}
+
+int cache_file(ContentCache * cache, const char * url_path, const CachedFile * file) {
+    return -1;
+}
