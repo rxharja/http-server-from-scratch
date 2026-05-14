@@ -243,10 +243,10 @@ KeepAliveStatus handle_connection(const int fd, const Router * router, HttpBuffe
     ResponseHeader allow_h = {0};
     char res_allow_buf[128] = {0};
     HttpBuffer allow_buf = {.buffer = res_allow_buf, .cap = 128 };
-    HttpRequest *req = malloc(sizeof(HttpRequest));
+    HttpRequest *req = calloc(1, sizeof(HttpRequest));
     if (!req) goto cleanup;
 
-    const ReadHeaderResult header_res = recv_header(fd, req_buffer->http_buffer.buffer, req_buffer->already_have, MAX_HEADER_LEN);
+    const ReadHeaderResult header_res = recv_header(fd, req_buffer->http_buffer.buffer, req_buffer->already_have, MAX_REQUEST_LEN);
     if (header_res.status != READ_HEADER_OK) {
         res = to_http_response(header_res.status == READ_HEADER_TOO_LARGE
             ? PARSE_HEADER_TOO_LONG : PARSE_BAD_REQUEST);
@@ -319,6 +319,7 @@ KeepAliveStatus handle_connection(const int fd, const Router * router, HttpBuffe
 
     // absolute offset before next response
     if (body_res.status == READ_BODY_OVERREAD) status.next_req_offset = header_res.body_start + body_res.next_req_offset;
+    else if (req->body_len == 0 && header_res.total_received > header_res.body_start) status.next_req_offset = header_res.body_start;
 
     const HttpMethod method = req->request_line.method == HEAD ? GET : req->request_line.method;
 

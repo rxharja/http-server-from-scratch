@@ -86,8 +86,8 @@ int run_server(const char * port, const Router * router, const size_t backlog) {
             ReadBuffer request_buffer = {0};
             HttpBuffer response_buffer = {0};
 
-            request_buffer.http_buffer.buffer = malloc(MAX_QUERY_LEN * sizeof(char));
-            request_buffer.http_buffer.cap = MAX_QUERY_LEN;
+            request_buffer.http_buffer.buffer = malloc(MAX_REQUEST_LEN * sizeof(char));
+            request_buffer.http_buffer.cap = MAX_REQUEST_LEN;
 
             response_buffer.buffer = malloc(RESPONSE_BUFFER_SIZE * sizeof(char));
             response_buffer.cap = RESPONSE_BUFFER_SIZE;
@@ -99,7 +99,7 @@ int run_server(const char * port, const Router * router, const size_t backlog) {
                 if (status.bytes_to_send <= 0) {
                     perror("handle_connection");
                     close(new_fd);
-                    exit(1);
+                    _exit(1);
                 }
 
                 send(new_fd, response_buffer.buffer, status.bytes_to_send, 0);
@@ -120,7 +120,7 @@ int run_server(const char * port, const Router * router, const size_t backlog) {
 
             close(new_fd);
             free(request_buffer.http_buffer.buffer); free(response_buffer.buffer);
-            exit(0);
+            _exit(0);
         }
         close(new_fd);
     }

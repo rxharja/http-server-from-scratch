@@ -48,7 +48,7 @@ static CachedFile * create_cached_file(const char *path) {
     content->len = st.st_size;
     const size_t bytes_read = fread(content->data, 1, st.st_size, file);
     content->data[bytes_read] = '\0';
-    content->content_type = get_content_type(path);
+    content->content_type = (ResponseHeader){ .key = "Content-Type", .value = get_content_type(path) };
 
     fclose(file);
     return content;
@@ -112,11 +112,9 @@ char* get_content_type(const char * path) {
 }
 
 HttpResponse from_cached_file(const HttpRequest * req, const CachedFile * file) {
-    const ResponseHeader h[1] = { { "Content-Type", file->content_type } };
-
     const HttpResponse response = {
         .status = 200, .reason = "OK",
-        .headers = h,  .header_count = 1,
+        .headers = &file->content_type,  .header_count = 1,
         .body = file->data,  .body_len = file->len
     };
 

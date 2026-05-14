@@ -12,6 +12,7 @@
 #define MAX_METHOD_LEN 8
 #define MAX_PATH_LEN 2048
 #define MAX_QUERY_LEN 512
+#define MAX_REQUEST_LEN (8 * 1024 * 1024)
 #define VERSION_LEN 8
 
 typedef enum {

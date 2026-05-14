@@ -84,7 +84,7 @@ int main(const int argc, char *argv[]) {
         .routes = routes
     };
 
-    cache_static_dir(router.static_files, "wwwroot-wasm", NULL);
+    cache_static_dir(router.static_files, "wwwroot", NULL);
 
     sa.sa_handler = sigchild_handler;
     sigemptyset(&sa.sa_mask);
