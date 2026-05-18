@@ -23,7 +23,7 @@ typedef struct {
 
 typedef struct {
     size_t len;
-    ResponseHeader content_type;
+    ResponseHeader headers[3];
     char data[];
 } CachedFile;
 

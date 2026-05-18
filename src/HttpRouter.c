@@ -28,10 +28,12 @@ ContentCache * content_cache_create() {
     return dict_init();
 }
 
+#define LEN_BUF_SIZE 32
+
 static CachedFile * create_cached_file(const char *path) {
     struct stat st;
     if (stat(path, &st) != 0) return NULL;
-    CachedFile * content = malloc(sizeof(CachedFile) + st.st_size + 1);
+    CachedFile * content = malloc(sizeof(CachedFile) + st.st_size + 1 + LEN_BUF_SIZE);
 
     if (!content) {
         perror("Failed to allocate memory.");
@@ -48,9 +50,17 @@ static CachedFile * create_cached_file(const char *path) {
     content->len = st.st_size;
     const size_t bytes_read = fread(content->data, 1, st.st_size, file);
     content->data[bytes_read] = '\0';
-    content->content_type = (ResponseHeader){ .key = "Content-Type", .value = get_content_type(path) };
-
     fclose(file);
+
+    // calculate pointer at the end of the allocated data body.
+    char * len_buf = content->data + st.st_size + 1;
+
+    snprintf(len_buf, LEN_BUF_SIZE, "%zu", content->len);
+
+    content->headers[0] = (ResponseHeader){ .key = "Content-Type", .value = get_content_type(path) };
+    content->headers[1] = (ResponseHeader){ .key = "Content-Length", .value = len_buf };
+    content->headers[2] = (ResponseHeader){ .key = "Cache-Control", .value = "max-age=31536000, immutable" };
+
     return content;
 }
 
@@ -114,7 +124,7 @@ char* get_content_type(const char * path) {
 HttpResponse from_cached_file(const HttpRequest * req, const CachedFile * file) {
     const HttpResponse response = {
         .status = 200, .reason = "OK",
-        .headers = &file->content_type,  .header_count = 1,
+        .headers = file->headers,  .header_count = 3,
         .body = file->data,  .body_len = file->len
     };
 

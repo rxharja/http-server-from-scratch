@@ -23,17 +23,6 @@ void intHandler(const int sig) {
     keepRunning = 0;
 }
 
-static HttpResponse hello(const HttpRequest * request) {
-    static const ResponseHeader h[1] = { { "Content-Type", "text/html" }, };
-    static const char body[] = "<h1>Hello, World!</h1>\n";
-    static const HttpResponse response = {
-        .status = 200, .reason = "OK",
-        .headers = h,  .header_count = 1,
-        .body = body,  .body_len = sizeof body - 1
-    };
-    return response;
-}
-
 static HttpResponse not_found(const HttpRequest * request) {
     static const ResponseHeader h[1] = { { "Content-Type", "text/html" }, };
     static const char body[] = "<h1>Nothing here...</h1>\n";
