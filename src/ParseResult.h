@@ -5,6 +5,9 @@
 #ifndef HTTPSERVER_PARSERESULT_H
 #define HTTPSERVER_PARSERESULT_H
 #include <stddef.h>
+#include <time.h>
+
+#define HTTP_DATE_FMT "%a, %d %b %Y %H:%M:%S GMT"
 
 typedef enum {
     PARSE_OK,
@@ -18,7 +21,8 @@ typedef enum {
     PARSE_NOT_IMPLEMENTED,
     PARSE_INCOMPLETE,
     PARSE_NOT_FOUND,
-    PARSE_NOT_ALLOWED
+    PARSE_NOT_ALLOWED,
+    PARSE_SERVER_ERROR
   } ParseStatus;
 
 typedef struct {
@@ -33,5 +37,9 @@ ParseStatus parse_uint(const char *s, size_t len, int base, size_t max, size_t *
 int digit_value(unsigned char c, int base);
 
 void set_parse_error(ParseResult *res, ParseStatus status, const char * pos);
+
+int parse_http_date(const char *s, time_t *out);
+
+size_t format_http_date(time_t t, char *buf, size_t buf_len);
 
 #endif //HTTPSERVER_PARSERESULT_H

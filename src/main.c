@@ -68,18 +68,18 @@ int main(const int argc, char *argv[]) {
     };
 
     const Router router = {
-        .static_files = content_cache_create(),
+        .static_cache = content_cache_create(),
         .route_count = 2,
         .routes = routes
     };
 
-    cache_static_dir(router.static_files, "wwwroot", NULL);
+    cache_static_dir(router.static_cache, "wwwroot", NULL);
 
     sa.sa_handler = sigchild_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
     if (sigaction(SIGCHLD, &sa, NULL) == -1) {
-        content_cache_free(router.static_files);
+        content_cache_free(router.static_cache);
         perror("sigaction");
         exit(EXIT_FAILURE);
     }

@@ -3,6 +3,8 @@ project(HttpServer C)
 
 set(CMAKE_C_STANDARD 11)
 
+add_compile_definitions(_XOPEN_SOURCE=700 _GNU_SOURCE)
+
 add_executable(HttpServer src/main.c
         src/HttpRequest.c src/HttpRequest.h
         src/HttpResponse.c src/HttpResponse.h

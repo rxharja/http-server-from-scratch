@@ -18,7 +18,7 @@ int has_duplicate_routes(const Router * router) {
     for (int i = 0; i < router->route_count; i++) {
         const Route * route = &router->routes[i];
         if (route->method != get) continue;
-        const CachedFile * file = dict_find(router->static_files, route->path);
+        const CachedFile * file = dict_find(router->static_cache, route->path);
         if (file) return 1;
     }
 

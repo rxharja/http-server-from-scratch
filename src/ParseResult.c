@@ -3,8 +3,9 @@
 //
 
 #include "ParseResult.h"
-
 #include <ctype.h>
+#include <time.h>
+#include <string.h>
 
 #include "../lib/parser.h"
 
@@ -45,4 +46,17 @@ ParseStatus parse_uint(const char *s, const size_t len, const int base, const si
 
     *out = result;
     return PARSE_OK;
+}
+
+int parse_http_date(const char *s, time_t *out) {
+    struct tm tm = {0};
+    if (strptime(s, HTTP_DATE_FMT, &tm) == NULL) return -1;
+    *out = timegm(&tm);  // GNU/BSD extension; interprets tm as UTC
+    return 0;
+}
+
+size_t format_http_date(time_t t, char *buf, const size_t buf_len) {
+    struct tm tm;
+    gmtime_r(&t, &tm);
+    return strftime(buf, buf_len, HTTP_DATE_FMT, &tm);
 }

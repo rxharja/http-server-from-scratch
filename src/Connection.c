@@ -10,6 +10,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <asm-generic/errno-base.h>
+#include <sys/stat.h>
+
 #include "HttpRequest.h"
 #include "HttpResponse.h"
 #include "ParseResult.h"
@@ -244,13 +246,13 @@ KeepAliveStatus handle_connection(const int fd, const Router * router, HttpBuffe
     char res_allow_buf[128] = {0};
     HttpBuffer allow_buf = {.buffer = res_allow_buf, .cap = 128 };
     HttpRequest *req = calloc(1, sizeof(HttpRequest));
-    if (!req) goto cleanup;
+    if (!req) goto serve;
 
     const ReadHeaderResult header_res = recv_header(fd, req_buffer->http_buffer.buffer, req_buffer->already_have, MAX_REQUEST_LEN);
     if (header_res.status != READ_HEADER_OK) {
         res = to_http_response(header_res.status == READ_HEADER_TOO_LARGE
             ? PARSE_HEADER_TOO_LONG : PARSE_BAD_REQUEST);
-        goto cleanup;
+        goto serve;
     }
 
     req_buffer->http_buffer.size = header_res.total_received;
@@ -259,13 +261,13 @@ KeepAliveStatus handle_connection(const int fd, const Router * router, HttpBuffe
     const ParseResult parse_req_res = parse_request(req_buffer->http_buffer.buffer, req_buffer->http_buffer.size, req);
     if (parse_req_res.status != PARSE_OK) {
         res = to_http_response(parse_req_res.status);
-        goto cleanup;
+        goto serve;
     }
 
     // HTTP/1.1 requires having a host header
     if (!ascii_ieq(req->request_line.version, "http/1.0")) {
         const Header * host_header = get_header(req->headers, req->header_count, "host");
-        if (!host_header) { res = to_http_response(PARSE_BAD_REQUEST); goto cleanup; }
+        if (!host_header) { res = to_http_response(PARSE_BAD_REQUEST); goto serve; }
 
         // Keep-Alive or close decision, next req offset set.
         const Header * ka_header = get_header(req->headers, req->header_count, "connection");
@@ -282,8 +284,8 @@ KeepAliveStatus handle_connection(const int fd, const Router * router, HttpBuffe
         te_status = parse_transfer_encoding(req->headers[i].value, &coding);
     }
 
-    if (coding == TE_UNSUPPORTED) { res = to_http_response(PARSE_NOT_IMPLEMENTED); goto cleanup; }
-    if (te_status != PARSE_OK)    { res = to_http_response(te_status);               goto cleanup; }
+    if (coding == TE_UNSUPPORTED) { res = to_http_response(PARSE_NOT_IMPLEMENTED); goto serve; }
+    if (te_status != PARSE_OK)    { res = to_http_response(te_status);               goto serve; }
 
     ReadBodyResult body_res = {0};
     if (coding == TE_CHUNKED) {
@@ -293,7 +295,7 @@ KeepAliveStatus handle_connection(const int fd, const Router * router, HttpBuffe
             header_res.total_received - header_res.body_start,
             MAX_BODY_LEN - header_res.body_start,
             req->body);
-        if (body_res.status != READ_BODY_OK) { res = to_http_response(PARSE_BAD_REQUEST); goto cleanup; }
+        if (body_res.status != READ_BODY_OK) { res = to_http_response(PARSE_BAD_REQUEST); goto serve; }
         req->body_len = body_res.body_received;
     }
     else {
@@ -302,7 +304,7 @@ KeepAliveStatus handle_connection(const int fd, const Router * router, HttpBuffe
         else {
             size_t body_len = 0;
             const ParseStatus ps = parse_uint(ct_len_h->value, strlen(ct_len_h->value), 10, MAX_BODY_LEN, &body_len);
-            if (ps != PARSE_OK) { res = to_http_response(ps); goto cleanup; }
+            if (ps != PARSE_OK) { res = to_http_response(ps); goto serve; }
             body_res = recv_body(fd,
                 req_buffer->http_buffer.buffer + header_res.body_start,
                 header_res.total_received - header_res.body_start,
@@ -310,7 +312,7 @@ KeepAliveStatus handle_connection(const int fd, const Router * router, HttpBuffe
 
             if (body_res.status != READ_BODY_OK || body_res.status != READ_BODY_OVERREAD) {
                 res = to_http_response(PARSE_BAD_REQUEST);
-                goto cleanup;
+                goto serve;
             }
 
             req->body_len = body_res.body_received;
@@ -323,13 +325,20 @@ KeepAliveStatus handle_connection(const int fd, const Router * router, HttpBuffe
 
     const HttpMethod method = req->request_line.method == HEAD ? GET : req->request_line.method;
 
-    int found_static = 0;
     if (method == GET) {
-        CachedFile * file = dict_find(router->static_files, req->request_line.path);
-        if (file) {
-            res = from_cached_file(req, file);
+        CachedFile * sf = dict_find(router->static_cache, req->request_line.path);
+        if (sf) {
+            res = from_cached_file(req, sf);
             if (req->request_line.method == HEAD) res.head_only = 1;
-            goto cleanup;
+            goto serve;
+        }
+
+        const DynamicLookupResult d = dynamic_lookup(router->dynamic_cache, req, req->request_line.path);
+        switch (d.status) {
+            case DYN_NOT_REGISTERED:                                           break;
+            case DYN_GONE:          res = to_http_response(PARSE_NOT_FOUND); goto serve;
+            case DYN_NOT_MODIFIED:  res = make_304(d.file);                    goto serve;
+            case DYN_HIT:           res = from_dynamic_cached_file(d.file);    goto serve;
         }
     }
 
@@ -345,7 +354,7 @@ KeepAliveStatus handle_connection(const int fd, const Router * router, HttpBuffe
 
     show_request(req);
 
-cleanup: ;
+serve: ;
     status.bytes_to_send = serialize_response(&res, res_buffer->buffer, res_buffer->cap, status.keep_alive);
     res_buffer->size = status.bytes_to_send;
     free(req);
