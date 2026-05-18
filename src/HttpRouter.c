@@ -143,13 +143,18 @@ char* get_content_type(const char * path) {
 }
 
 HttpResponse from_cached_file(const HttpRequest * req, const CachedFile * file) {
-    const HttpResponse response = {
+    HttpResponse res = {
         .status = 200, .reason = "OK",
+        .head_only = req->request_line.method == HEAD,
         .headers = file->headers,  .header_count = 3,
-        .body = file->data,  .body_len = file->len
     };
 
-    return response;
+    if (!res.head_only) {
+        res.body = file->data;
+        res.body_len = file->len;
+    }
+
+    return res;
 }
 
 HttpResponse make_304(const DynamicCachedFile *f) {

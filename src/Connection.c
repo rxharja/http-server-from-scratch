@@ -327,11 +327,7 @@ KeepAliveStatus handle_connection(const int fd, const Router * router, HttpBuffe
 
     if (method == GET) {
         CachedFile * sf = dict_find(router->static_cache, req->request_line.path);
-        if (sf) {
-            res = from_cached_file(req, sf);
-            if (req->request_line.method == HEAD) res.head_only = 1;
-            goto serve;
-        }
+        if (sf) { res = from_cached_file(req, sf); goto serve; }
 
         const DynamicLookupResult d = dynamic_lookup(router->dynamic_cache, req, req->request_line.path);
         switch (d.status) {
