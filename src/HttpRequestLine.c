@@ -2,13 +2,13 @@
 // Created by redonxharja on 5/3/26.
 //
 
-#include "HttpRequestLine.h"
+#include "http_server/HttpRequestLine.h"
 
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
-#include "../lib/parser.h"
+#include "parser.h"
 
 HttpMethod parse_http_method(const char *s, const size_t len) {
     if (memcmp(s, "GET", 3) == 0 && len == 3) return GET;

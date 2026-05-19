@@ -2,11 +2,11 @@
 // Created by redonxharja on 5/3/26.
 //
 
-#include "HttpBody.h"
+#include "http_server/HttpBody.h"
 
 #include <string.h>
 
-#include "../lib/parser.h"
+#include "parser.h"
 
 ParseStatus parse_content_length(const char *val, size_t *out) {
     return parse_uint(val, strlen(val), 10, MAX_BODY_LEN, out);

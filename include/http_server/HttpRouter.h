@@ -4,8 +4,11 @@
 
 #ifndef HTTPSERVER_HTTPROUTER_H
 #define HTTPSERVER_HTTPROUTER_H
+#include <time.h>
+#include <sys/types.h>
 #include "HttpRequest.h"
 #include "HttpResponse.h"
+#include "Dictionary.h"
 
 typedef HttpResponse (*handler_fn)(const HttpRequest * req);
 typedef HttpResponse (*handler_fn_with_data)(const HttpRequest * req, const void * data);

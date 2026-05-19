@@ -4,8 +4,8 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "../src/HttpRequest.h"
-#include "../src/Connection.h"
+#include <http_server/HttpRequest.h>
+#include "Connection.h"
 
 static int total = 0, failed = 0;
 

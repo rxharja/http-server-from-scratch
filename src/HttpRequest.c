@@ -2,10 +2,10 @@
 // Created by redonxharja on 5/27/25.
 //
 
-#include "HttpRequest.h"
+#include "http_server/HttpRequest.h"
 
 #include <stdio.h>
-#include "../lib/parser.h"
+#include "parser.h"
 
 ParseResult parse_request(const char * buf, const size_t len, HttpRequest * req) {
     const char * cur = buf;

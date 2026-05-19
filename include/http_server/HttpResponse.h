@@ -5,8 +5,8 @@
 #ifndef HTTPSERVER_HEADER_H
 #define HTTPSERVER_HEADER_H
 #define RESPONSE_BUFFER_SIZE (128 * 1024 * 1024)
+#include <sys/types.h>
 #include "HttpRequest.h"
-#include "../lib/Dictionary.h"
 
 typedef struct {
     const char *key;

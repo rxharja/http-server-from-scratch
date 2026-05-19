@@ -5,8 +5,8 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <signal.h>
-#include "Connection.h"
-#include "HttpServer.h"
+#include <string.h>
+#include <http_server/HttpServer.h>
 
 #define BACKLOG 10
 

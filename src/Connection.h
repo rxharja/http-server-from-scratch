@@ -7,8 +7,8 @@
 #include <stdio.h>
 #include <netdb.h>
 #include <sys/socket.h>
-#include "HttpResponse.h"
-#include "HttpRouter.h"
+#include "http_server/HttpResponse.h"
+#include "http_server/HttpRouter.h"
 
 /* READ HEADER */
 typedef enum {
@@ -61,8 +61,6 @@ int get_addr_info(struct addrinfo **serv_info, const char * port);
 int bind_socket(const struct addrinfo * servinfo);
 
 void *get_in_addr(struct sockaddr *sa);
-
-int valid_port(const char * str);
 
 ReadHeaderResult recv_header(int fd, char *header_buf, size_t already_have, ssize_t header_cap);
 

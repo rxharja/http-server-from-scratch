@@ -16,6 +16,8 @@
  *   - Absolute-form request targets (GET http://host/path) not parsed; affects proxy use
  *   - Chunked trailer fields not supported (RFC 9112 §7.1.2)
  */
+int valid_port(const char * str);
+
 int run_server(const char * port, const Router * router, size_t backlog);
 
 #endif //HTTPSERVER_HTTPSERVER_H

@@ -2,12 +2,12 @@
 // Created by redonxharja on 5/3/26.
 //
 
-#include "ParseResult.h"
+#include "http_server/ParseResult.h"
 #include <ctype.h>
 #include <time.h>
 #include <string.h>
 
-#include "../lib/parser.h"
+#include "parser.h"
 
 void set_parse_error(ParseResult *res, const ParseStatus status, const char * pos) {
     res->status = status;

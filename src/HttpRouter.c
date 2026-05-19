@@ -2,11 +2,11 @@
 // Created by RedonXharja on 5/13/2026.
 //
 
-#include "HttpRouter.h"
+#include "http_server/HttpRouter.h"
 
 #include <dirent.h>
 #include <sys/stat.h>
-#include "../lib/parser.h"
+#include "parser.h"
 
 RouteLookupResult route_lookup(const Route routes[], const size_t count, const char *method, const char *path) {
     RouteLookupResult res = {0};
@@ -197,11 +197,11 @@ DynamicLookupResult dynamic_lookup(ContentCache * cache, const HttpRequest * req
     struct stat st;
     if (stat(entry->fs_path, &st) != 0) { r.status = DYN_GONE; return r; } // 404
 
-    // dict_insert replaces + frees the old entry
+    // if modified times don't match or the sizes have changed
     if (st.st_mtime != entry->mtime || st.st_size != entry->size) {
         DynamicCachedFile *fresh = load_dynamic(url_path, entry->fs_path, &st);
         if (!fresh) { r.status = DYN_GONE; return r; } // 404
-        dict_insert(cache, url_path, fresh);
+        dict_insert(cache, url_path, fresh); // dict_insert replaces + frees the old entry
         entry = fresh;
     }
 

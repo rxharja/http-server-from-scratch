@@ -2,12 +2,12 @@
 // Created by redonxharja on 5/3/26.
 //
 
-#include "HttpHeaders.h"
+#include "http_server/HttpHeaders.h"
 
 #include <ctype.h>
 #include <stdio.h>
 
-#include "../lib/parser.h"
+#include "parser.h"
 
 ParseResult parse_header_key(const char * cur, const char * end, Header * header) {
     ParseResult res = {0};

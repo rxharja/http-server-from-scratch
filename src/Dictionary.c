@@ -4,8 +4,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "linked_node_macro.h"
-#include "Dictionary.h"
+#include "http_server/linked_node_macro.h"
+#include "http_server/Dictionary.h"
 
 uint64_t key_hash(const char *c) {
     uint64_t hash = 1469598103934665603ULL; // FNV offset basis

@@ -2,10 +2,11 @@
 // Created by redonxharja on 4/27/26.
 //
 
-#include "HttpResponse.h"
+#include "http_server/HttpResponse.h"
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
-#include "../lib/parser.h"
+#include "parser.h"
 
 static int write_header(char * write_buf, const size_t cap, const ResponseHeader * header) {
     int written = 0;

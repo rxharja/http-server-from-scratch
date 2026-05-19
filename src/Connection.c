@@ -12,10 +12,10 @@
 #include <asm-generic/errno-base.h>
 #include <sys/stat.h>
 
-#include "HttpRequest.h"
-#include "HttpResponse.h"
-#include "ParseResult.h"
-#include "../lib/parser.h"
+#include "http_server/HttpRequest.h"
+#include "http_server/HttpResponse.h"
+#include "http_server/ParseResult.h"
+#include "parser.h"
 
 struct addrinfo;
 

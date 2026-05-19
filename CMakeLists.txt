@@ -5,35 +5,34 @@ set(CMAKE_C_STANDARD 11)
 
 add_compile_definitions(_XOPEN_SOURCE=700 _GNU_SOURCE)
 
-add_executable(HttpServer src/main.c
-        src/HttpRequest.c src/HttpRequest.h
-        src/HttpResponse.c src/HttpResponse.h
-        lib/linked_node_macro.h lib/Dictionary.c lib/Dictionary.h
-        lib/parser.c lib/parser.h
-        src/HttpRequestLine.c
-        src/HttpRequestLine.h
-        src/HttpHeaders.c
-        src/HttpHeaders.h
-        src/ParseResult.c
-        src/ParseResult.h
-        src/HttpBody.c
-        src/HttpBody.h
-        src/Connection.c
-        src/Connection.h
-        src/ConsumerCode.c
+# === Library ===
+add_library(HttpServer STATIC
         src/HttpServer.c
-        src/HttpServer.h
         src/HttpRouter.c
-        src/HttpRouter.h)
-
-add_executable(HttpServerTests tests/ParserTests.c
-        src/HttpRequest.c src/HttpRequest.h
-        lib/parser.c lib/parser.h
+        src/HttpRequest.c
         src/HttpRequestLine.c
-        src/HttpRequestLine.h
+        src/HttpResponse.c
         src/HttpHeaders.c
-        src/HttpHeaders.h
-        src/ParseResult.c
-        src/ParseResult.h
         src/HttpBody.c
-        src/HttpBody.h)
+        src/ParseResult.c
+        src/Connection.c
+        src/parser.c
+        src/Dictionary.c
+)
+
+target_include_directories(HttpServer
+        PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+# === Example app ===
+add_executable(example_server examples/main.c)
+target_link_libraries(example_server PRIVATE HttpServer)
+
+# === Tests ===
+# Tests need private headers (Connection.h, parser.h, etc.), so we grant
+# them access to src/ explicitly. This is a deliberate exception — only
+# in-tree tests get to peek behind the library's public API.
+add_executable(HttpServerTests tests/ParserTests.c)
+target_link_libraries(HttpServerTests PRIVATE HttpServer)
+target_include_directories(HttpServerTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
