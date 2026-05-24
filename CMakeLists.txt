@@ -18,6 +18,8 @@ add_library(HttpServer STATIC
         src/Connection.c
         src/parser.c
         src/Dictionary.c
+        src/Networking.c
+        src/Networking.h
 )
 
 target_include_directories(HttpServer

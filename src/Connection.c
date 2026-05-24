@@ -68,14 +68,6 @@ int bind_socket(const struct addrinfo * servinfo) {
     return sockfd;
 }
 
-void *get_in_addr(struct sockaddr *sa) {
-    if (sa->sa_family == AF_INET) {
-        return &((struct sockaddr_in*)sa)->sin_addr;
-    }
-
-    return &((struct sockaddr_in6*)sa)->sin6_addr;
-}
-
 int valid_port(const char * str) {
     char *endptr;
     errno = 0;
@@ -310,7 +302,7 @@ KeepAliveStatus handle_connection(const int fd, const Router * router, HttpBuffe
                 header_res.total_received - header_res.body_start,
                 body_len, req->body);
 
-            if (body_res.status != READ_BODY_OK || body_res.status != READ_BODY_OVERREAD) {
+            if (body_res.status != READ_BODY_OK && body_res.status != READ_BODY_OVERREAD) {
                 res = to_http_response(PARSE_BAD_REQUEST);
                 goto serve;
             }

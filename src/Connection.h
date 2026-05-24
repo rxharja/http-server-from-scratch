@@ -56,11 +56,35 @@ typedef struct {
     size_t next_req_offset;
 } KeepAliveStatus;
 
+typedef enum {
+    CONN_READING_HEADER,
+    CONN_READING_BODY_CL, // content length
+    CONN_READING_BODY_CHUNKED,
+    CONN_SENDING_RESPONSE
+} ConnPhase;
+
+typedef struct {
+    int fd;
+    ConnPhase phase;
+    ReadBuffer req; // buffer + how much is filled
+    HttpBuffer resp; // buffer + total size + how much sent
+    size_t sent; // send offset
+    HttpRequest req_parsed; // populated once header is done
+    size_t body_len; // populated once known
+    int keep_alive;
+} Connection;
+
+// struct for managing connections and poll_fds in one go
+typedef struct {
+    int fd_size; // capacity used for both conns and poll_fd_set
+    int fd_count; // how many within capacity, for both conns and poll_fd_set
+    struct pollfd *poll_fd_set; // used for polling fd's
+    Connection *conns; // parallel array to poll_fd_set tracking connection state
+}ClientSet;
+
 int get_addr_info(struct addrinfo **serv_info, const char * port);
 
 int bind_socket(const struct addrinfo * servinfo);
-
-void *get_in_addr(struct sockaddr *sa);
 
 ReadHeaderResult recv_header(int fd, char *header_buf, size_t already_have, ssize_t header_cap);
 

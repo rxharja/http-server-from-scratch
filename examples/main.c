@@ -1,27 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <errno.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <signal.h>
 #include <string.h>
 #include <http_server/HttpServer.h>
 
 #define BACKLOG 10
-
-void sigchild_handler(int s) {
-    int saved_errno = errno;
-    while (waitpid(-1, NULL, WNOHANG) > 0) {}
-    errno = saved_errno;
-}
-
-static volatile sig_atomic_t keepRunning = 1;
-
-void intHandler(const int sig) {
-    (void)sig; // unused
-    keepRunning = 0;
-}
 
 static HttpResponse not_found(const HttpRequest * request) {
     static const ResponseHeader h[1] = { { "Content-Type", "text/html" }, };
@@ -49,9 +33,6 @@ static HttpResponse do_something(const HttpRequest * request) {
 }
 
 int main(const int argc, char *argv[]) {
-    signal(SIGINT, intHandler);
-    struct sigaction sa;
-
     if (argc != 2) {
        printf("Usage: %s <port>\n", argv[0]);
         exit(EXIT_FAILURE);
@@ -73,18 +54,11 @@ int main(const int argc, char *argv[]) {
         .routes = routes
     };
 
-    cache_static_dir(router.static_cache, "wwwroot", NULL);
-
-    sa.sa_handler = sigchild_handler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESTART;
-    if (sigaction(SIGCHLD, &sa, NULL) == -1) {
-        content_cache_free(router.static_cache);
-        perror("sigaction");
-        exit(EXIT_FAILURE);
-    }
+    cache_static_dir(router.static_cache, "wwwroot-wasm", NULL);
 
     run_server(argv[1], &router, BACKLOG);
+
+    content_cache_free(router.static_cache);
 
     return EXIT_SUCCESS;
 }
