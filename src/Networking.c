@@ -17,15 +17,7 @@
 
 #define TIMEOUT 30
 
-void *get_in_addr(struct sockaddr *sa) {
-    if (sa->sa_family == AF_INET) {
-        return &((struct sockaddr_in*)sa)->sin_addr;
-    }
-
-    return &((struct sockaddr_in6*)sa)->sin6_addr;
-}
-
-const char *inet_ntop2(void *addr, char *buf, const size_t size) {
+static const char *inet_ntop2(void *addr, char *buf, const size_t size) {
     const struct sockaddr_storage *sas = addr;
     struct sockaddr_in *sa4;
     struct sockaddr_in6 *sa6;
@@ -87,7 +79,7 @@ int get_listener_socket(const char * port, const size_t backlog) {
     return listener;
 }
 
-void add_to_client_set(ClientSet *client_set, const int new_fd) {
+static void add_to_client_set(ClientSet *client_set, const int new_fd) {
     if (client_set == NULL || client_set->poll_fd_set == NULL || client_set->conns == NULL) return;
 
     // If we don't have room, add more space in the poll fd array
@@ -107,10 +99,10 @@ void add_to_client_set(ClientSet *client_set, const int new_fd) {
     client_set->fd_count++;
 }
 
-void del_from_poll_fd_set(struct pollfd poll_fd_set[], const int i, int *fd_count) {
+void del_from_client_set(ClientSet *client_set, const int i) {
     // Copy the one from the end over this one
-    poll_fd_set[i] = poll_fd_set[*fd_count-1];
-    (*fd_count)--;
+    client_set->poll_fd_set[i] = client_set->poll_fd_set[client_set->fd_count-1];
+    client_set->fd_count--;
 }
 
 void add_new_client(const int listener, ClientSet *client_set) {

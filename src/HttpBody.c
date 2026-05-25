@@ -12,7 +12,7 @@ ParseStatus parse_content_length(const char *val, size_t *out) {
     return parse_uint(val, strlen(val), 10, MAX_BODY_LEN, out);
 }
 
-ChunkResult parse_chunk(const char * buf, const char * end, char * dest) {
+ChunkResult parse_chunk(const char * buf, const char * end, char * dest, size_t cap) {
     ChunkResult res = {0};
     const char * cur = buf;
 
@@ -46,6 +46,11 @@ ChunkResult parse_chunk(const char * buf, const char * end, char * dest) {
         return res;
     }
 
+    if (len >= cap) {
+        set_parse_error(&res.parse_result, PARSE_PAYLOAD_TOO_LARGE, cur);
+        return res;
+    }
+
     memcpy(dest, cur, len);
     res.parse_result.status = PARSE_OK;
     if (cur + len + 2 <= end) res.parse_result.next = cur + len + 2;
@@ -53,12 +58,13 @@ ChunkResult parse_chunk(const char * buf, const char * end, char * dest) {
     return res;
 }
 
-ChunkResult body_dechunk(const char * buf, const char * end, char * dest) {
+ChunkResult body_dechunk(const char * buf, const char * end, char * dest, const size_t cap) {
     const char * cur = buf;
     size_t total = 0;
     ChunkResult c = {0};
     while (1) {
-        c = parse_chunk(cur, end, dest + total);
+        const size_t remaining = cap > total ? cap - total : 0;
+        c = parse_chunk(cur, end, dest + total, remaining);
         total += c.chunk_size;
         if (c.parse_result.status != PARSE_OK) {
             c.chunk_size = total; // accumulate it here
@@ -70,6 +76,7 @@ ChunkResult body_dechunk(const char * buf, const char * end, char * dest) {
 
     while (1) {
         if (cur + 2 > end) {
+            c.chunk_size = total;
             set_parse_error(&c.parse_result, PARSE_INCOMPLETE, cur);
             return c;
         }
@@ -77,6 +84,7 @@ ChunkResult body_dechunk(const char * buf, const char * end, char * dest) {
         if (cur[0] == '\r' && cur[1] == '\n') { cur += 2; break; }   // body terminator
         const char *crlf = find_crlf(cur, end);
         if (!crlf) {
+            c.chunk_size = total;
             set_parse_error(&c.parse_result, PARSE_INCOMPLETE, cur);
             return c;
         }

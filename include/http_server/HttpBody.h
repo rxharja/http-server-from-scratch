@@ -24,8 +24,8 @@ ParseStatus parse_content_length(const char * val, size_t * out);
 
 ParseStatus parse_transfer_encoding(const char * val, TransferCoding * coding);
 
-ChunkResult parse_chunk(const char * buf, const char * end, char * dest);
+ChunkResult parse_chunk(const char * buf, const char * end, char * dest, size_t cap);
 
-ChunkResult body_dechunk(const char * buf, const char * end, char * dest);
+ChunkResult body_dechunk(const char * buf, const char * end, char * dest, size_t cap);
 
 #endif //HTTPSERVER_HTTPBODY_H

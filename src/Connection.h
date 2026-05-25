@@ -16,6 +16,7 @@ typedef enum {
     READ_HEADER_PEER_CLOSED,
     READ_HEADER_TOO_LARGE,
     READ_HEADER_IO_ERROR,
+    READ_HEADER_HAS_MORE
 } ReadHeaderStatus;
 
 typedef struct {
@@ -28,9 +29,9 @@ typedef enum {
     READ_BODY_OK = 0,
     READ_BODY_PEER_CLOSED,
     READ_BODY_TOO_LARGE,
-    READ_BODY_OVERREAD,
     READ_BODY_IO_ERROR,
     READ_BODY_BAD_DATA,
+    READ_BODY_HAS_MORE
 } ReadBodyStatus;
 
 typedef struct {
@@ -67,36 +68,25 @@ typedef struct {
     int fd;
     ConnPhase phase;
     ReadBuffer req; // buffer + how much is filled
+    HttpBuffer body_dechunked;
+    size_t body_len; // set after content-length is parsed
+    size_t body_start;
+    size_t body_received;
+    HttpRequest req_parsed; // populated once header is done
     HttpBuffer resp; // buffer + total size + how much sent
     size_t sent; // send offset
-    HttpRequest req_parsed; // populated once header is done
-    size_t body_len; // populated once known
     int keep_alive;
 } Connection;
 
-// struct for managing connections and poll_fds in one go
-typedef struct {
-    int fd_size; // capacity used for both conns and poll_fd_set
-    int fd_count; // how many within capacity, for both conns and poll_fd_set
-    struct pollfd *poll_fd_set; // used for polling fd's
-    Connection *conns; // parallel array to poll_fd_set tracking connection state
-}ClientSet;
+ReadHeaderResult recv_header(Connection *conn);
 
-int get_addr_info(struct addrinfo **serv_info, const char * port);
+ReadBodyResult recv_chunked_body(Connection * conn);
 
-int bind_socket(const struct addrinfo * servinfo);
-
-ReadHeaderResult recv_header(int fd, char *header_buf, size_t already_have, ssize_t header_cap);
-
-ReadBodyResult recv_chunked_body(int fd, char *buf, size_t have, size_t buf_cap, char * dest_buf);
-
-/// invariant: result.body_received is in the set of [0, body_len]
-ReadBodyResult recv_body(int fd, const char *buf, size_t already_have, size_t body_len, char * dest_buf);
-
-HttpResponse handle_dynamic_file(const HttpRequest * req, const char * path);
+// invariant: result.body_received is in the set of [0, body_len]
+ReadBodyResult recv_body(Connection * conn, size_t body_len);
 
 HttpResponse synthesize_405(const char * const *allowed, size_t allowed_count, const HttpBuffer * allow_buf, ResponseHeader *h);
 
-KeepAliveStatus handle_connection(int fd, const Router * router, HttpBuffer *res_buffer, ReadBuffer *req_buffer);
+KeepAliveStatus handle_connection(Connection * conn, const Router * router);
 
 #endif //HTTPSERVER_CONNECTION_H

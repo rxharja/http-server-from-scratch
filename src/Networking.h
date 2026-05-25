@@ -6,19 +6,19 @@
 #define HTTPSERVER_NETWORKING_H
 #include "Connection.h"
 
-// network to presentation for ipv4 and ipv6
-const char *inet_ntop2(void *addr, char *buf, size_t size);
-
-void *get_in_addr(struct sockaddr *sa);
+// struct for managing connections and poll_fds in one go
+typedef struct {
+    int fd_size; // capacity used for both conns and poll_fd_set
+    int fd_count; // how many within capacity, for both conns and poll_fd_set
+    struct pollfd *poll_fd_set; // used for polling fd's
+    Connection *conns; // parallel array to poll_fd_set tracking connection state
+}ClientSet;
 
 //Return a listening socket.
 int get_listener_socket(const char * port, size_t backlog);
 
-// Add a new file descriptor to the set.
-void add_to_client_set(ClientSet * client_set, int new_fd);
-
 // Remove a file descriptor at a given index from the set.
-void del_from_poll_fd_set(struct pollfd poll_fd_set[], int i, int *fd_count);
+void del_from_client_set(ClientSet *client_set, int i);
 
 // Handle incoming connections.
 void add_new_client(int listener, ClientSet *client_set);

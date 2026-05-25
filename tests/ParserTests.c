@@ -224,7 +224,7 @@ static void expect_parse_chunk_ok(const char *label,
                                   const size_t want_size, const char *want_data,
                                   const size_t want_consumed) {
     char dest[1024] = {0};
-    const ChunkResult res = parse_chunk(input, input + input_len, dest);
+    const ChunkResult res = parse_chunk(input, input + input_len, dest, sizeof(dest));
     check(label, res.parse_result.status == PARSE_OK, "parse_chunk: not OK");
     check(label, res.chunk_size == want_size, "parse_chunk: chunk_size mismatch");
     if (want_size > 0 && want_data) {
@@ -240,7 +240,7 @@ static void expect_parse_chunk_err(const char *label,
                                    const char *input, const size_t input_len,
                                    const ParseStatus want_status) {
     char dest[1024] = {0};
-    const ChunkResult res = parse_chunk(input, input + input_len, dest);
+    const ChunkResult res = parse_chunk(input, input + input_len, dest, sizeof(dest));
     check(label, res.parse_result.status == want_status, "parse_chunk: status mismatch");
 }
 
@@ -251,7 +251,7 @@ static void expect_dechunk_ok(const char *label,
                               const char *input, const size_t input_len,
                               const char *want_decoded, const size_t want_decoded_len) {
     char dest[4096] = {0};
-    const ChunkResult res = body_dechunk(input, input + input_len, dest);
+    const ChunkResult res = body_dechunk(input, input + input_len, dest, sizeof(dest));
     check(label, res.parse_result.status == PARSE_OK, "body_dechunk: not OK");
     if (want_decoded_len > 0 && want_decoded) {
         check(label, memcmp(dest, want_decoded, want_decoded_len) == 0,
@@ -265,7 +265,7 @@ static void expect_dechunk_err(const char *label,
                                const char *input, const size_t input_len,
                                const ParseStatus want_status) {
     char dest[4096] = {0};
-    const ChunkResult res = body_dechunk(input, input + input_len, dest);
+    const ChunkResult res = body_dechunk(input, input + input_len, dest, sizeof(dest));
     check(label, res.parse_result.status == want_status, "body_dechunk: status mismatch");
 }
 

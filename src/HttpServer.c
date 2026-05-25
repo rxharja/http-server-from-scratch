@@ -11,9 +11,9 @@
 #include "Connection.h"
 #include "Networking.h"
 
-void cleanup_fd(ClientSet *client_set, int *pfd_i) {
+static void cleanup_fd(ClientSet *client_set, int *pfd_i) {
     close(client_set->poll_fd_set[*pfd_i].fd);
-    del_from_poll_fd_set(client_set->poll_fd_set, *pfd_i, &client_set->fd_count);
+    del_from_client_set(client_set, *pfd_i);
     (*pfd_i)--; // re-examine the slot we just deleted
 }
 
@@ -39,18 +39,18 @@ static int has_duplicate_routes(const Router * router) {
 }
 
 static void handle_client_data(ClientSet * client_set, int *pfd_i, const Router * router) {
-    ReadBuffer request_buffer = {0};
-    HttpBuffer response_buffer = {0};
+    client_set->conns[*pfd_i].req.http_buffer.buffer = malloc(MAX_REQUEST_LEN * sizeof(char));
+    client_set->conns[*pfd_i].req.http_buffer.cap = MAX_REQUEST_LEN;
 
-    request_buffer.http_buffer.buffer = malloc(MAX_REQUEST_LEN * sizeof(char));
-    request_buffer.http_buffer.cap = MAX_REQUEST_LEN;
+    client_set->conns[*pfd_i].resp.buffer = malloc(RESPONSE_BUFFER_SIZE * sizeof(char));
+    client_set->conns[*pfd_i].resp.cap = RESPONSE_BUFFER_SIZE;
 
-    response_buffer.buffer = malloc(RESPONSE_BUFFER_SIZE * sizeof(char));
-    response_buffer.cap = RESPONSE_BUFFER_SIZE;
+    ReadBuffer * request_buffer = &client_set->conns[*pfd_i].req;
+    const HttpBuffer * response_buffer = &client_set->conns[*pfd_i].resp;
 
     size_t requests = 0;
     while (requests <= MAX_REQUESTS) {
-        const KeepAliveStatus status = handle_connection(client_set->poll_fd_set[*pfd_i].fd, router, &response_buffer, &request_buffer);
+        const KeepAliveStatus status = handle_connection(&client_set->conns[*pfd_i], router);
 
         if (status.bytes_to_send <= 0) {
             if (status.bytes_to_send < 0) perror("handle_connection");
@@ -58,7 +58,7 @@ static void handle_client_data(ClientSet * client_set, int *pfd_i, const Router 
             return;
         }
 
-        const ssize_t bytes_sent = send(client_set->poll_fd_set[*pfd_i].fd, response_buffer.buffer, status.bytes_to_send, 0);
+        const ssize_t bytes_sent = send(client_set->poll_fd_set[*pfd_i].fd, response_buffer->buffer, status.bytes_to_send, 0);
         if (bytes_sent != status.bytes_to_send) perror("send");
 
         requests++;
@@ -68,17 +68,17 @@ static void handle_client_data(ClientSet * client_set, int *pfd_i, const Router 
 
         // should be replaced by a ring-buffer for performance.
         // can be done when we replace malloc calling every time with static or upfront allocation
-        const size_t bytes_to_move = request_buffer.http_buffer.size - status.next_req_offset;
-        memmove(request_buffer.http_buffer.buffer,
-            request_buffer.http_buffer.buffer + status.next_req_offset,
+        const size_t bytes_to_move = request_buffer->http_buffer.size - status.next_req_offset;
+        memmove(request_buffer->http_buffer.buffer,
+            request_buffer->http_buffer.buffer + status.next_req_offset,
               bytes_to_move);
 
-        request_buffer.already_have = bytes_to_move;
+        request_buffer->already_have = bytes_to_move;
     }
 
     cleanup_fd(client_set, pfd_i);
-    free(request_buffer.http_buffer.buffer);
-    free(response_buffer.buffer);
+    free(request_buffer->http_buffer.buffer);
+    free(response_buffer->buffer);
 }
 
 int run_server(const char * port, const Router * router, const size_t backlog) {
@@ -96,7 +96,6 @@ int run_server(const char * port, const Router * router, const size_t backlog) {
     client_set.fd_size = 8;
     client_set.poll_fd_set = malloc(sizeof(*client_set.poll_fd_set) * client_set.fd_size);
     client_set.conns = malloc(sizeof(*client_set.conns) * client_set.fd_size);
-
     client_set.poll_fd_set[0].fd = listener;
     client_set.poll_fd_set[0].events = POLLIN;
     client_set.poll_fd_set[0].revents = 0;
