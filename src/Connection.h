@@ -5,8 +5,6 @@
 #ifndef HTTPSERVER_CONNECTION_H
 #define HTTPSERVER_CONNECTION_H
 #include <stdio.h>
-#include <netdb.h>
-#include <sys/socket.h>
 #include "http_server/HttpResponse.h"
 #include "http_server/HttpRouter.h"
 
@@ -72,6 +70,7 @@ typedef struct {
     size_t body_len; // set after content-length is parsed
     size_t body_start;
     size_t body_received;
+    ChunkDecoder chunk_decoder;
     HttpRequest req_parsed; // populated once header is done
     HttpBuffer resp; // buffer + total size + how much sent
     size_t sent; // send offset

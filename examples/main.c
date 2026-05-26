@@ -53,7 +53,7 @@ int main(const int argc, char *argv[]) {
         .routes = routes
     };
 
-    cache_static_dir(router.static_cache, "wwwroot-wasm", NULL);
+    cache_static_dir(router.static_cache, "wwwroot", NULL);
 
     run_server(argv[1], &router, BACKLOG);
 

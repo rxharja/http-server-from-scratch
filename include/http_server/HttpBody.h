@@ -15,6 +15,22 @@ typedef enum {
     TE_UNSUPPORTED,  // any non-chunked coding present
 } TransferCoding;
 
+typedef enum {
+    CHUNK_SIZE,
+    CHUNK_DATA,
+    CHUNK_TRAIL_CR,
+    CHUNK_TRAIL_LF,
+    CHUNK_TRAILER,
+    CHUNK_DONE
+} ChunkedPhase;
+
+typedef struct {
+    ChunkedPhase phase;
+    size_t remaining;
+    char line_buf[64];
+    size_t line_len;
+} ChunkDecoder;
+
 typedef struct {
     ParseResult parse_result;
     size_t chunk_size;
