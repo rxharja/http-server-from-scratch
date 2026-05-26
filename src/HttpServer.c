@@ -40,36 +40,49 @@ static int has_duplicate_routes(const Router * router) {
     return 0;
 }
 
+static short conn_phase_event(const ConnPhase phase) {
+    switch (phase) {
+        case CONN_READING_REQUEST:
+        case CONN_READING_BODY_CL:
+        case CONN_READING_BODY_CHUNKED:  return POLLIN;
+        case CONN_BUILDING:              return 0;        // synchronous; see note below
+        case CONN_SENDING_RESPONSE:      return POLLOUT;
+        case CONN_CLOSED:                return 0;        // about to remove from set
+    }
+
+    return 0;
+}
+
 static void handle_client_data(ClientSet * client_set, int *pfd_i, const Router * router) {
-    client_set->conns[*pfd_i].req_buf.buffer = malloc(MAX_REQUEST_LEN * sizeof(char));
-    client_set->conns[*pfd_i].req_buf.cap = MAX_REQUEST_LEN;
+    Connection * conn = &client_set->conns[*pfd_i];
+    conn->req_buf.buffer = calloc(1, MAX_REQUEST_LEN * sizeof(char));
+    conn->req_buf.cap = MAX_REQUEST_LEN;
+    conn->req_buf.size = 0;
 
-    client_set->conns[*pfd_i].resp_buf.buffer = malloc(RESPONSE_BUFFER_SIZE * sizeof(char));
-    client_set->conns[*pfd_i].resp_buf.cap = RESPONSE_BUFFER_SIZE;
+    conn->resp_buf.buffer = calloc(1, RESPONSE_BUFFER_SIZE * sizeof(char));
+    conn->resp_buf.cap = RESPONSE_BUFFER_SIZE;
+    conn->resp_buf.size = 0;
 
-    HttpBuffer * request_buffer = &client_set->conns[*pfd_i].req_buf;
+    conn->requests = 0;
+    conn->phase = CONN_READING_REQUEST;
+
+    memset(&conn->req_parsed, 0, sizeof(conn->req_parsed));
+    memset(&conn->st, 0, sizeof(conn->st));
+
+    const HttpBuffer * request_buffer = &client_set->conns[*pfd_i].req_buf;
     const HttpBuffer * response_buffer = &client_set->conns[*pfd_i].resp_buf;
 
-    size_t requests = 0;
-    while (requests <= MAX_REQUESTS) {
-        const KeepAliveStatus status = handle_connection(&client_set->conns[*pfd_i], router);
+    // state changes within this while loop, otherwise it gets reset
+    while (conn->requests <= MAX_REQUESTS) {
+        handle_connection(conn, router);
+        client_set->poll_fd_set[*pfd_i].events = conn_phase_event(conn->phase);
 
-        if (status.bytes_to_send <= 0) {
-            if (status.bytes_to_send < 0) perror("handle_connection");
-            cleanup_fd(client_set, pfd_i);
-            return;
+        if (conn->phase == CONN_CLOSED) break;
+
+        if (conn->phase == CONN_SENDING_RESPONSE && conn->resp_buf.size <= 0) {
+            if (conn->resp_buf.size < 0) perror("handle_connection");
+            break;
         }
-
-        requests++;
-
-        if (!client_set->conns[*pfd_i].keep_alive) break;
-        if (status.next_req_offset <= 0) continue;
-
-        // should be replaced by a ring-buffer for performance.
-        // can be done when we replace malloc calling every time with static or upfront allocation
-        const size_t bytes_to_move = request_buffer->size - status.next_req_offset;
-        memmove(request_buffer->buffer, request_buffer->buffer + status.next_req_offset, bytes_to_move);
-        request_buffer->size = bytes_to_move;
     }
 
     cleanup_fd(client_set, pfd_i);
@@ -109,14 +122,11 @@ int run_server(const char * port, const Router * router, const size_t backlog) {
 
         // Run through connections
         for(int i = 0; i < client_set.fd_count; i++) {
-            if (client_set.poll_fd_set[i].revents & (POLLIN | POLLHUP)) {
+            if (client_set.poll_fd_set[i].revents & (POLLIN | POLLHUP | POLLOUT)) {
                 // receive data
                 if (client_set.poll_fd_set[i].fd == listener) add_new_client(listener, &client_set);
                 else handle_client_data(&client_set, &i, router);
             }
-            // if (client_set.poll_fd_set[i].revents & POLLOUT) {
-                // send data
-            // }
         }
     }
 }

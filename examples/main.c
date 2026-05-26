@@ -37,7 +37,7 @@ int main(const int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    if (valid_port(argv[1]) != 0) {
+    if (port_is_valid(argv[1]) != 0) {
         printf("Invalid port number\n");
         exit(EXIT_FAILURE);
     }

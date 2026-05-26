@@ -88,6 +88,8 @@ typedef struct {
     HttpBuffer req_buf;
     HttpBuffer resp_buf;
     HttpRequest req_parsed;
+    size_t next_req_offset;
+    size_t requests;
     union {
         CLBodySt cl;
         ChunkedBodySt chunked;
@@ -102,7 +104,7 @@ ReadBodyResult recv_body(int fd, HttpBuffer * req, CLBodySt * st);
 
 ReadBodyResult recv_chunked_body(Connection * conn);
 
-HttpResponse synthesize_405(const char * const *allowed, size_t allowed_count, const HttpBuffer * allow_buf, ResponseHeader *h);
+HttpResponse response_error_405(const char * const *allowed, size_t allowed_count, const HttpBuffer * allow_buf, ResponseHeader *h);
 
 KeepAliveStatus handle_connection(Connection * conn, const Router * router);
 

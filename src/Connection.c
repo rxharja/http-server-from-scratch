@@ -18,7 +18,7 @@
 
 struct addrinfo;
 
-int valid_port(const char * str) {
+int port_is_valid(const char * str) {
     char *endptr;
     errno = 0;
 
@@ -168,15 +168,14 @@ ReadBodyResult recv_chunked_body(Connection * conn) {
     // return res;
 }
 
-SendReponseStatus send_response(const int fd, const HttpBuffer * resp, SendSt * st) {
+SendReponseStatus response_send(const int fd, const HttpBuffer * resp, SendSt * st) {
     assert(resp);
     assert(resp->buffer);
     assert(st);
     assert(fd >= 0);
     assert(st->sent < resp->size);
 
-    SendReponseStatus res;
-    res = SEND_HAS_MORE;
+    SendReponseStatus res = SEND_HAS_MORE;
 
     // MSG_NOSIGNAL handles SIGPIPE killing the process when the peer has closed.
     const ssize_t sent = send(fd, resp->buffer + st->sent, resp->size - st->sent, MSG_NOSIGNAL);
@@ -195,7 +194,7 @@ SendReponseStatus send_response(const int fd, const HttpBuffer * resp, SendSt * 
     return res;
 }
 
-static HttpResponse to_http_error(const ParseStatus s) {
+static HttpResponse response_error_from_status(const ParseStatus s) {
     static const HttpResponse r400 = { .status = 400, .reason = "Bad Request",
                                        .body = "Bad Request", .body_len = 11 };
     static const HttpResponse r413 = { .status = 413, .reason = "Payload Too Large",
@@ -227,7 +226,7 @@ static HttpResponse to_http_error(const ParseStatus s) {
     }
 }
 
-HttpResponse synthesize_405(const char * const *allowed, const size_t allowed_count, const HttpBuffer * allow_buf, ResponseHeader *h) {
+HttpResponse response_error_405(const char * const *allowed, const size_t allowed_count, const HttpBuffer * allow_buf, ResponseHeader *h) {
     for (size_t i = 0; i < allowed_count; i++) {
         if (i > 0) strncat(allow_buf->buffer, ", ", allow_buf->cap - strlen(allow_buf->buffer) - 1);
         strncat(allow_buf->buffer, allowed[i], allow_buf->cap - strlen(allow_buf->buffer) - 1);
@@ -241,12 +240,12 @@ HttpResponse synthesize_405(const char * const *allowed, const size_t allowed_co
     };
 }
 
-static void serialize_error(const HttpBuffer * resp, const ParseStatus s) {
-    const HttpResponse res = to_http_error(s);
+static void response_error_serialize(const HttpBuffer * resp, const ParseStatus s) {
+    const HttpResponse res = response_error_from_status(s);
     serialize_response(&res, resp->buffer, resp->cap, 0);
 }
 
-static ConnPhase step_read_header(Connection * conn) {
+static ConnPhase step_header_read(Connection * conn) {
     assert(conn);
     assert(conn->phase == CONN_READING_REQUEST);
 
@@ -254,13 +253,14 @@ static ConnPhase step_read_header(Connection * conn) {
     if (header_res.status == READ_HEADER_HAS_MORE) return CONN_READING_REQUEST;
     if (header_res.status == READ_HEADER_PEER_CLOSED || header_res.status == READ_HEADER_IO_ERROR) return CONN_CLOSED;
     if (header_res.status != READ_HEADER_OK) {
-        serialize_error(&conn->resp_buf, header_res.status == READ_HEADER_TOO_LARGE ? PARSE_HEADER_TOO_LONG : PARSE_BAD_REQUEST);
+        const int err_type = header_res.status == READ_HEADER_TOO_LARGE ? PARSE_HEADER_TOO_LONG : PARSE_BAD_REQUEST;
+        response_error_serialize(&conn->resp_buf, err_type);
         return CONN_SENDING_RESPONSE;
     }
 
     const ParseResult parse_res = parse_request(conn->req_buf.buffer, conn->req_buf.size, &conn->req_parsed);
     if (parse_res.status != PARSE_OK) {
-        serialize_error(&conn->resp_buf, parse_res.status);
+        response_error_serialize(&conn->resp_buf, parse_res.status);
         return CONN_SENDING_RESPONSE;
     }
 
@@ -269,7 +269,7 @@ static ConnPhase step_read_header(Connection * conn) {
 
     if (!ascii_ieq(conn->req_parsed.request_line.version, "http/1.0")) {
         if (!get_header(conn->req_parsed.headers, conn->req_parsed.header_count, "host")) {
-            serialize_error(&conn->resp_buf, PARSE_BAD_REQUEST);
+            response_error_serialize(&conn->resp_buf, PARSE_BAD_REQUEST);
             return CONN_SENDING_RESPONSE;
         }
 
@@ -287,12 +287,12 @@ static ConnPhase step_read_header(Connection * conn) {
     }
 
     if (coding == TE_UNSUPPORTED) {
-        serialize_error(&conn->resp_buf, PARSE_NOT_IMPLEMENTED);
+        response_error_serialize(&conn->resp_buf, PARSE_NOT_IMPLEMENTED);
         return CONN_SENDING_RESPONSE;
     }
 
     if (te_status != PARSE_OK) {
-        serialize_error(&conn->resp_buf, te_status);
+        response_error_serialize(&conn->resp_buf, te_status);
         return CONN_SENDING_RESPONSE;
     }
 
@@ -300,7 +300,7 @@ static ConnPhase step_read_header(Connection * conn) {
 
     // prevent smuggling by returning 400
     if (ct_len_h && coding == TE_CHUNKED) {
-        serialize_error(&conn->resp_buf, PARSE_BAD_REQUEST);
+        response_error_serialize(&conn->resp_buf, PARSE_BAD_REQUEST);
         return CONN_SENDING_RESPONSE;
     }
 
@@ -308,7 +308,7 @@ static ConnPhase step_read_header(Connection * conn) {
     if (ct_len_h) {
         const ParseStatus ps = parse_uint(ct_len_h->value, strlen(ct_len_h->value), 10, MAX_BODY_LEN, &body_len);
         if (ps != PARSE_OK) {
-            serialize_error(&conn->resp_buf, ps);
+            response_error_serialize(&conn->resp_buf, ps);
             return CONN_SENDING_RESPONSE;
         }
     }
@@ -316,7 +316,7 @@ static ConnPhase step_read_header(Connection * conn) {
     const int has_body = coding == TE_CHUNKED || (ct_len_h && body_len > 0);
     if (conn->req_parsed.request_line.method == HEAD && has_body) {
         // Per RFC: clients MUST NOT send content with HEAD.
-        serialize_error(&conn->resp_buf, PARSE_BAD_REQUEST);
+        response_error_serialize(&conn->resp_buf, PARSE_BAD_REQUEST);
         return CONN_SENDING_RESPONSE;
     }
 
@@ -343,31 +343,113 @@ static ConnPhase step_read_header(Connection * conn) {
     return CONN_READING_BODY_CL;
 }
 
-static ConnPhase step_send_response(Connection * conn) {
-    const SendReponseStatus status = send_response(conn->fd, &conn->resp_buf, &conn->st.send);
+static ConnPhase step_body_cl_read(Connection * conn) {
+    assert(conn);
+    assert(conn->phase == CONN_READING_BODY_CL);
+
+    const ReadBodyResult body_res = recv_body(conn->fd, &conn->req_buf, &conn->st.cl);
+
+    // body_res set to this when we have read the full content length or more.
+    if (body_res.status == READ_BODY_OK) {
+        conn->req_parsed.body_len = conn->st.cl.received;
+        conn->next_req_offset = body_res.next_req_offset;
+        return CONN_BUILDING;
+    }
+
+    if (body_res.status == READ_BODY_HAS_MORE) return CONN_READING_BODY_CL;
+
+    // fall through case is not a valid read result.
+    response_error_serialize(&conn->resp_buf, PARSE_BAD_REQUEST);
+    return CONN_SENDING_RESPONSE;
+}
+
+static ConnPhase step_response_build(Connection * conn, const Router * router) {
+    assert(conn);
+    assert(router);
+    assert(conn->phase == CONN_BUILDING);
+
+    HttpResponse res = {0};
+    const HttpRequest * req = &conn->req_parsed;
+    ResponseHeader allow_h = {0};
+    char allow_storage[128] = {0};
+    const HttpBuffer allow_buf = { .buffer = allow_storage, .cap = sizeof(allow_storage) };
+
+    const HttpMethod method = conn->req_parsed.request_line.method == HEAD ? GET : conn->req_parsed.request_line.method;
+
+    if (method == GET) {
+        const CachedFile * sf = dict_find(router->static_cache, req->request_line.path);
+        if (sf) { res = from_cached_file(&conn->req_parsed, sf); goto build_resp; }
+
+        const DynamicLookupResult d = dynamic_lookup(router->dynamic_cache, req, req->request_line.path);
+
+        switch (d.status) {
+            case DYN_NOT_REGISTERED:                                       break;
+            case DYN_GONE:         res = response_error_from_status(PARSE_NOT_FOUND); goto build_resp;
+            case DYN_NOT_MODIFIED: res = make_304(d.file);                 goto build_resp;
+            case DYN_HIT:          res = from_dynamic_cached_file(d.file); goto build_resp;
+        }
+    }
+
+    const RouteLookupResult route_res =
+        route_lookup(router->routes, router->route_count, show_http_method(method), conn->req_parsed.request_line.path);
+
+    const Route *route = route_res.route;
+    if      (route && !route->data)       res = route_res.route->handler.fn(req);
+    else if (route && route->data)        res = route_res.route->handler.fn_with_data(req, route->data);
+    else if (route_res.allowed_count > 0) res = response_error_405(route_res.allowed, route_res.allowed_count, &allow_buf, &allow_h);
+    else                                  res = response_error_from_status(PARSE_NOT_FOUND);
+
+build_resp: ;
+    if (req->request_line.method == HEAD) res.head_only = 1;
+    conn->resp_buf.size = serialize_response(&res, conn->resp_buf.buffer, conn->resp_buf.cap, conn->keep_alive);
+
+    if (conn->next_req_offset > 0) {
+        const size_t pipelined = conn->req_buf.size - conn->next_req_offset;
+        memmove(conn->req_buf.buffer, conn->req_buf.buffer + conn->next_req_offset, pipelined);
+    }
+    else conn->req_buf.size = 0;
+    conn->next_req_offset = 0;
+
+    return CONN_SENDING_RESPONSE;
+}
+
+
+static ConnPhase step_response_send(Connection * conn) {
+    const SendReponseStatus status = response_send(conn->fd, &conn->resp_buf, &conn->st.send);
+
     switch (status) {
         case SEND_HAS_MORE:    return CONN_SENDING_RESPONSE;
         case SEND_ERROR:       return CONN_CLOSED;
         case SEND_PEER_CLOSED: return CONN_CLOSED;
-        case SEND_OK:          return CONN_CLOSED;
+        case SEND_OK:
+            conn->requests++;
+            if (conn->st.send.sent >= conn->resp_buf.size) return CONN_CLOSED;
+            return CONN_SENDING_RESPONSE;
+            break;
     }
 }
 
 KeepAliveStatus handle_connection(Connection * conn, const Router * router) {
     switch (conn->phase) {
         case CONN_READING_REQUEST:
-            conn->phase = step_read_header(conn);
+            conn->phase = step_header_read(conn);
             break;
         case CONN_READING_BODY_CL:
+            conn->phase = step_body_cl_read(conn);
             break;
         case CONN_READING_BODY_CHUNKED:
-            serialize_error(&conn->resp_buf, PARSE_NOT_IMPLEMENTED);
+            // TODO: rework chunked based parsing
+            response_error_serialize(&conn->resp_buf, PARSE_NOT_IMPLEMENTED);
             conn->phase = CONN_SENDING_RESPONSE;
             break;
         case CONN_BUILDING:
+            conn->phase = step_response_build(conn, router);
             break;
         case CONN_SENDING_RESPONSE:
-            conn->phase = step_send_response(conn);
+            conn->phase = step_response_send(conn);
+            break;
+        case CONN_CLOSED:
+            conn->keep_alive ? CONN_READING_REQUEST : CONN_CLOSED;
             break;
     }
 }
