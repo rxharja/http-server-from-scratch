@@ -106,6 +106,6 @@ ReadBodyResult recv_chunked_body(Connection * conn);
 
 HttpResponse response_error_405(const char * const *allowed, size_t allowed_count, const HttpBuffer * allow_buf, ResponseHeader *h);
 
-KeepAliveStatus handle_connection(Connection * conn, const Router * router);
+KeepAliveStatus connection_step_process(Connection * conn, const Router * router);
 
 #endif //HTTPSERVER_CONNECTION_H

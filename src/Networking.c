@@ -14,6 +14,7 @@
 #include "Networking.h"
 
 #include "Connection.h"
+#include "parser.h"
 
 #define TIMEOUT 30
 
@@ -79,6 +80,23 @@ int get_listener_socket(const char * port, const size_t backlog) {
     return listener;
 }
 
+static void connection_init(Connection * conn, const int new_fd) {
+    conn->fd = new_fd;
+    conn->req_buf.buffer = calloc(1, MAX_REQUEST_LEN * sizeof(char));
+    conn->req_buf.cap = MAX_REQUEST_LEN;
+    conn->req_buf.size = 0;
+
+    conn->resp_buf.buffer = calloc(1, RESPONSE_BUFFER_SIZE * sizeof(char));
+    conn->resp_buf.cap = RESPONSE_BUFFER_SIZE;
+    conn->resp_buf.size = 0;
+
+    conn->requests = 0;
+    conn->phase = CONN_READING_REQUEST;
+
+    memset(&conn->req_parsed, 0, sizeof(conn->req_parsed));
+    memset(&conn->st, 0, sizeof(conn->st));
+}
+
 static void add_to_client_set(ClientSet *client_set, const int new_fd) {
     if (client_set == NULL || client_set->poll_fd_set == NULL || client_set->conns == NULL) return;
 
@@ -92,9 +110,7 @@ static void add_to_client_set(ClientSet *client_set, const int new_fd) {
     client_set->poll_fd_set[client_set->fd_count].fd = new_fd;
     client_set->poll_fd_set[client_set->fd_count].events = POLLIN;
     client_set->poll_fd_set[client_set->fd_count].revents = 0;
-
-    client_set->conns[client_set->fd_count].fd = new_fd;
-    client_set->conns[client_set->fd_count].phase = CONN_READING_REQUEST;
+    connection_init(&client_set->conns[client_set->fd_count], new_fd);
 
     client_set->fd_count++;
 }
@@ -104,6 +120,7 @@ void del_from_client_set(ClientSet *client_set, const int i) {
     client_set->poll_fd_set[i] = client_set->poll_fd_set[client_set->fd_count-1];
     client_set->fd_count--;
 }
+
 
 void add_new_client(const int listener, ClientSet *client_set) {
     const struct timeval timeout = { .tv_sec = TIMEOUT, .tv_usec = 0 };

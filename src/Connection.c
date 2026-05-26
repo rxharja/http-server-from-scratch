@@ -15,6 +15,7 @@
 #include "http_server/HttpResponse.h"
 #include "http_server/ParseResult.h"
 #include "parser.h"
+#include "http_server/HttpServer.h"
 
 struct addrinfo;
 
@@ -424,12 +425,14 @@ static ConnPhase step_response_send(Connection * conn) {
         case SEND_OK:
             conn->requests++;
             if (conn->st.send.sent >= conn->resp_buf.size) return CONN_CLOSED;
+            if (!conn->keep_alive) return CONN_CLOSED;
+            if (conn->requests >= MAX_REQUESTS) return CONN_CLOSED;
             return CONN_SENDING_RESPONSE;
             break;
     }
 }
 
-KeepAliveStatus handle_connection(Connection * conn, const Router * router) {
+KeepAliveStatus connection_step_process(Connection * conn, const Router * router) {
     switch (conn->phase) {
         case CONN_READING_REQUEST:
             conn->phase = step_header_read(conn);
@@ -508,58 +511,4 @@ KeepAliveStatus handle_connection(Connection * conn, const Router * router) {
 //         if (body_res.status != READ_BODY_OK) { res = to_http_error(PARSE_BAD_REQUEST); goto serve; }
 //         req->body_len = body_res.body_received;
 //     }
-//     else {
-//         const Header *ct_len_h = get_header(req->headers, req->header_count, "content-length");
-//         if (!ct_len_h) req->body_len = 0;
-//         else {
-//             size_t body_len = 0;
-//             const ParseStatus ps = parse_uint(ct_len_h->value, strlen(ct_len_h->value), 10, MAX_BODY_LEN, &body_len);
-//             if (ps != PARSE_OK) { res = to_http_error(ps); goto serve; }
-//             body_res = recv_body(conn, body_len);
-//
-//             if (body_res.status != READ_BODY_OK && body_res.status != READ_BODY_HAS_MORE) {
-//                 res = to_http_error(PARSE_BAD_REQUEST);
-//                 goto serve;
-//             }
-//
-//             req->body_len = body_res.body_received;
-//         }
-//     }
-//
-//     // absolute offset before next response
-//     if (body_res.status == READ_BODY_HAS_MORE) status.next_req_offset = header_res.body_start + body_res.next_req_offset;
-//     else if (req->body_len == 0 && header_res.total_received > header_res.body_start) status.next_req_offset = header_res.body_start;
-//
-//     const HttpMethod method = req->request_line.method == HEAD ? GET : req->request_line.method;
-//
-//     if (method == GET) {
-//         CachedFile * sf = dict_find(router->static_cache, req->request_line.path);
-//         if (sf) { res = from_cached_file(req, sf); goto serve; }
-//
-//         const DynamicLookupResult d = dynamic_lookup(router->dynamic_cache, req, req->request_line.path);
-//         switch (d.status) {
-//             case DYN_NOT_REGISTERED:                                           break;
-//             case DYN_GONE:          res = to_http_error(PARSE_NOT_FOUND); goto serve;
-//             case DYN_NOT_MODIFIED:  res = make_304(d.file);                    goto serve;
-//             case DYN_HIT:           res = from_dynamic_cached_file(d.file);    goto serve;
-//         }
-//     }
-//
-//     const RouteLookupResult route_res = route_lookup(router->routes, router->route_count, show_http_method(method), req->request_line.path);
-//
-//     const Route *route = route_res.route;
-//     if      (route && !route->data)       res = route_res.route->handler.fn(req);
-//     else if (route && route->data)        res = route_res.route->handler.fn_with_data(req, route->data);
-//     else if (route_res.allowed_count > 0) res = synthesize_405(route_res.allowed, route_res.allowed_count, &allow_buf, &allow_h);
-//     else                                  res = to_http_error(PARSE_NOT_FOUND);
-//
-//     if (req->request_line.method == HEAD) res.head_only = 1;
-//
-//     show_request(req);
-//
-// serve: ;
-//     status.bytes_to_send = (int)serialize_response(&res, conn->resp.buffer, conn->resp.cap, status.keep_alive);
-//     conn->resp.size = status.bytes_to_send;
-//     free(req);
-//     return status;
 // }

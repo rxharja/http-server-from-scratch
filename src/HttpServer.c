@@ -8,16 +8,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <sys/poll.h>
-#include <sys/socket.h>
-
 #include "Connection.h"
 #include "Networking.h"
-
-static void cleanup_fd(ClientSet *client_set, int *pfd_i) {
-    close(client_set->poll_fd_set[*pfd_i].fd);
-    del_from_client_set(client_set, *pfd_i);
-    (*pfd_i)--; // re-examine the slot we just deleted
-}
 
 static int has_duplicate_routes(const Router * router) {
     const char * get = show_http_method(GET);
@@ -53,41 +45,13 @@ static short conn_phase_event(const ConnPhase phase) {
     return 0;
 }
 
-static void handle_client_data(ClientSet * client_set, int *pfd_i, const Router * router) {
-    Connection * conn = &client_set->conns[*pfd_i];
-    conn->req_buf.buffer = calloc(1, MAX_REQUEST_LEN * sizeof(char));
-    conn->req_buf.cap = MAX_REQUEST_LEN;
-    conn->req_buf.size = 0;
-
-    conn->resp_buf.buffer = calloc(1, RESPONSE_BUFFER_SIZE * sizeof(char));
-    conn->resp_buf.cap = RESPONSE_BUFFER_SIZE;
-    conn->resp_buf.size = 0;
-
-    conn->requests = 0;
-    conn->phase = CONN_READING_REQUEST;
-
-    memset(&conn->req_parsed, 0, sizeof(conn->req_parsed));
-    memset(&conn->st, 0, sizeof(conn->st));
-
-    const HttpBuffer * request_buffer = &client_set->conns[*pfd_i].req_buf;
-    const HttpBuffer * response_buffer = &client_set->conns[*pfd_i].resp_buf;
-
-    // state changes within this while loop, otherwise it gets reset
-    while (conn->requests <= MAX_REQUESTS) {
-        handle_connection(conn, router);
-        client_set->poll_fd_set[*pfd_i].events = conn_phase_event(conn->phase);
-
-        if (conn->phase == CONN_CLOSED) break;
-
-        if (conn->phase == CONN_SENDING_RESPONSE && conn->resp_buf.size <= 0) {
-            if (conn->resp_buf.size < 0) perror("handle_connection");
-            break;
-        }
-    }
-
-    cleanup_fd(client_set, pfd_i);
-    free(request_buffer->buffer);
-    free(response_buffer->buffer);
+static void connection_close(ClientSet * client_set, int *pfd_i) {
+    const Connection * conn = &client_set->conns[*pfd_i];
+    free(conn->req_buf.buffer);
+    free(conn->resp_buf.buffer);
+    close(client_set->poll_fd_set[*pfd_i].fd);
+    del_from_client_set(client_set, *pfd_i);
+    (*pfd_i)--; // re-examine the slot we just deleted
 }
 
 int run_server(const char * port, const Router * router, const size_t backlog) {
@@ -120,13 +84,17 @@ int run_server(const char * port, const Router * router, const size_t backlog) {
             exit(1);
         }
 
-        // Run through connections
-        for(int i = 0; i < client_set.fd_count; i++) {
-            if (client_set.poll_fd_set[i].revents & (POLLIN | POLLHUP | POLLOUT)) {
-                // receive data
-                if (client_set.poll_fd_set[i].fd == listener) add_new_client(listener, &client_set);
-                else handle_client_data(&client_set, &i, router);
-            }
+        if (client_set.poll_fd_set[0].revents & POLLIN) add_new_client(listener, &client_set);
+
+        // Run through connections after 0 since that is the listener
+        for(int i = 1; i < client_set.fd_count; i++) {
+            struct pollfd * poll_fd = &client_set.poll_fd_set[i];
+            if (!(poll_fd->revents & (POLLIN | POLLHUP | POLLOUT))) continue;
+
+            Connection * conn = &client_set.conns[i];
+            connection_step_process(conn, router);
+            poll_fd->events = conn_phase_event(conn->phase);
+            if (conn->phase == CONN_CLOSED) connection_close(&client_set, &i);
         }
     }
 }
