@@ -8,6 +8,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <sys/poll.h>
+#include <sys/socket.h>
+
 #include "Connection.h"
 #include "Networking.h"
 
@@ -39,14 +41,14 @@ static int has_duplicate_routes(const Router * router) {
 }
 
 static void handle_client_data(ClientSet * client_set, int *pfd_i, const Router * router) {
-    client_set->conns[*pfd_i].req.http_buffer.buffer = malloc(MAX_REQUEST_LEN * sizeof(char));
-    client_set->conns[*pfd_i].req.http_buffer.cap = MAX_REQUEST_LEN;
+    client_set->conns[*pfd_i].req_buf.buffer = malloc(MAX_REQUEST_LEN * sizeof(char));
+    client_set->conns[*pfd_i].req_buf.cap = MAX_REQUEST_LEN;
 
-    client_set->conns[*pfd_i].resp.buffer = malloc(RESPONSE_BUFFER_SIZE * sizeof(char));
-    client_set->conns[*pfd_i].resp.cap = RESPONSE_BUFFER_SIZE;
+    client_set->conns[*pfd_i].resp_buf.buffer = malloc(RESPONSE_BUFFER_SIZE * sizeof(char));
+    client_set->conns[*pfd_i].resp_buf.cap = RESPONSE_BUFFER_SIZE;
 
-    ReadBuffer * request_buffer = &client_set->conns[*pfd_i].req;
-    const HttpBuffer * response_buffer = &client_set->conns[*pfd_i].resp;
+    HttpBuffer * request_buffer = &client_set->conns[*pfd_i].req_buf;
+    const HttpBuffer * response_buffer = &client_set->conns[*pfd_i].resp_buf;
 
     size_t requests = 0;
     while (requests <= MAX_REQUESTS) {
@@ -58,26 +60,20 @@ static void handle_client_data(ClientSet * client_set, int *pfd_i, const Router 
             return;
         }
 
-        const ssize_t bytes_sent = send(client_set->poll_fd_set[*pfd_i].fd, response_buffer->buffer, status.bytes_to_send, 0);
-        if (bytes_sent != status.bytes_to_send) perror("send");
-
         requests++;
 
-        if (!status.keep_alive) break;
+        if (!client_set->conns[*pfd_i].keep_alive) break;
         if (status.next_req_offset <= 0) continue;
 
         // should be replaced by a ring-buffer for performance.
         // can be done when we replace malloc calling every time with static or upfront allocation
-        const size_t bytes_to_move = request_buffer->http_buffer.size - status.next_req_offset;
-        memmove(request_buffer->http_buffer.buffer,
-            request_buffer->http_buffer.buffer + status.next_req_offset,
-              bytes_to_move);
-
-        request_buffer->already_have = bytes_to_move;
+        const size_t bytes_to_move = request_buffer->size - status.next_req_offset;
+        memmove(request_buffer->buffer, request_buffer->buffer + status.next_req_offset, bytes_to_move);
+        request_buffer->size = bytes_to_move;
     }
 
     cleanup_fd(client_set, pfd_i);
-    free(request_buffer->http_buffer.buffer);
+    free(request_buffer->buffer);
     free(response_buffer->buffer);
 }
 
@@ -111,12 +107,16 @@ int run_server(const char * port, const Router * router, const size_t backlog) {
             exit(1);
         }
 
-        // Run through connections looking for data to read
+        // Run through connections
         for(int i = 0; i < client_set.fd_count; i++) {
             if (client_set.poll_fd_set[i].revents & (POLLIN | POLLHUP)) {
+                // receive data
                 if (client_set.poll_fd_set[i].fd == listener) add_new_client(listener, &client_set);
                 else handle_client_data(&client_set, &i, router);
             }
+            // if (client_set.poll_fd_set[i].revents & POLLOUT) {
+                // send data
+            // }
         }
     }
 }

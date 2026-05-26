@@ -94,7 +94,7 @@ static void add_to_client_set(ClientSet *client_set, const int new_fd) {
     client_set->poll_fd_set[client_set->fd_count].revents = 0;
 
     client_set->conns[client_set->fd_count].fd = new_fd;
-    client_set->conns[client_set->fd_count].phase = CONN_READING_HEADER;
+    client_set->conns[client_set->fd_count].phase = CONN_READING_REQUEST;
 
     client_set->fd_count++;
 }

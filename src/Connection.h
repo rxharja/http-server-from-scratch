@@ -32,10 +32,16 @@ typedef enum {
     READ_BODY_HAS_MORE
 } ReadBodyStatus;
 
+typedef enum {
+    SEND_OK,
+    SEND_PEER_CLOSED,
+    SEND_HAS_MORE,
+    SEND_ERROR
+} SendReponseStatus;
+
 typedef struct {
     ReadBodyStatus status;
-    size_t          body_received;
-    size_t          next_req_offset;
+    size_t         next_req_offset;
 } ReadBodyResult;
 
 typedef struct {
@@ -45,44 +51,56 @@ typedef struct {
 } HttpBuffer;
 
 typedef struct {
-    HttpBuffer http_buffer;
-    size_t already_have;
-} ReadBuffer;
-
-typedef struct {
-    int bytes_to_send;
-    int keep_alive;
+    int    bytes_to_send;
+    int    keep_alive;
     size_t next_req_offset;
 } KeepAliveStatus;
 
 typedef enum {
-    CONN_READING_HEADER,
+    CONN_READING_REQUEST,
     CONN_READING_BODY_CL, // content length
     CONN_READING_BODY_CHUNKED,
-    CONN_SENDING_RESPONSE
+    CONN_BUILDING,
+    CONN_SENDING_RESPONSE,
+    CONN_CLOSED
 } ConnPhase;
+
+typedef struct {
+    size_t body_start;
+    size_t body_len;
+    size_t received;
+} CLBodySt;
+
+typedef struct {
+    size_t       body_start;
+    ChunkDecoder dec;
+    HttpBuffer   dechunked;
+} ChunkedBodySt;
+
+typedef struct {
+    size_t sent;
+} SendSt;
 
 typedef struct {
     int fd;
     ConnPhase phase;
-    ReadBuffer req; // buffer + how much is filled
-    HttpBuffer body_dechunked;
-    size_t body_len; // set after content-length is parsed
-    size_t body_start;
-    size_t body_received;
-    ChunkDecoder chunk_decoder;
-    HttpRequest req_parsed; // populated once header is done
-    HttpBuffer resp; // buffer + total size + how much sent
-    size_t sent; // send offset
     int keep_alive;
+    HttpBuffer req_buf;
+    HttpBuffer resp_buf;
+    HttpRequest req_parsed;
+    union {
+        CLBodySt cl;
+        ChunkedBodySt chunked;
+        SendSt send;
+    } st;
 } Connection;
 
-ReadHeaderResult recv_header(Connection *conn);
-
-ReadBodyResult recv_chunked_body(Connection * conn);
+ReadHeaderResult recv_header(int fd, HttpBuffer * req);
 
 // invariant: result.body_received is in the set of [0, body_len]
-ReadBodyResult recv_body(Connection * conn, size_t body_len);
+ReadBodyResult recv_body(int fd, HttpBuffer * req, CLBodySt * st);
+
+ReadBodyResult recv_chunked_body(Connection * conn);
 
 HttpResponse synthesize_405(const char * const *allowed, size_t allowed_count, const HttpBuffer * allow_buf, ResponseHeader *h);
 
