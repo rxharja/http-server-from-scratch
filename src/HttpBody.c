@@ -57,13 +57,6 @@ ChunkResult chunk_parse(const char * buf, const char * end, char * dest, const s
     return res;
 }
 
-/**
- * @param dec       Chunk Decoder containing the current phase and remaining bytes
- * @param in        pointer to next byte to consume
- * @param in_len    number of bytes readable starting at `in`
- * @param out       pointer to next byte position to write
- * @param out_avail number of bytes writable starting at `out`
- */
 ChunkResult chunk_advance(ChunkDecoder * dec, const char * in, const size_t in_len, char * out, const size_t out_avail) {
     assert(dec);
     assert(in);
@@ -73,8 +66,7 @@ ChunkResult chunk_advance(ChunkDecoder * dec, const char * in, const size_t in_l
     ChunkResult res = {0};
 
     switch (dec->phase) {
-        case CHUNK_SIZE: {
-            // parse length and handle ext
+        case CHUNK_SIZE: { // parse length and handle ext
             size_t len;
 
             const char * crlf = crlf_find(cur, cur + in_len); // find \r\n
@@ -134,7 +126,7 @@ ChunkResult chunk_advance(ChunkDecoder * dec, const char * in, const size_t in_l
             if (dec->remaining == 0) dec->phase = CHUNK_TRAIL_CR;
             return res;
         }
-        case CHUNK_TRAIL_CR: {
+        case CHUNK_TRAIL_CR: { // ensure we have a \r after our body
             if (in_len == 0) { parse_error_set(&res.parse_result, PARSE_INCOMPLETE, cur); return res; }
             if (*cur != '\r') { parse_error_set(&res.parse_result, PARSE_BAD_REQUEST, cur); return res; }
             dec->phase = CHUNK_TRAIL_LF;

@@ -108,7 +108,6 @@ ReadBodyResult conn_recv_body_cl(const int fd, HttpBuffer * req, CLBodySt * st) 
     return res;
 }
 
-// todo: rework to state machine for resuming where we left off between polls
 ReadBodyResult conn_recv_body_chunked(const int fd, HttpBuffer *req_buf, HttpBuffer *dechunked, ChunkedBodySt * st) {
     assert(fd > 0);
     assert(req_buf);
@@ -120,38 +119,40 @@ ReadBodyResult conn_recv_body_chunked(const int fd, HttpBuffer *req_buf, HttpBuf
     ReadBodyResult res = {0};
     res.status = READ_BODY_HAS_MORE;
 
+    const char * next = req_buf->buffer + st->body_start;
+
     while (1) {
-        const ChunkResult dechunk_res = body_dechunk(
-            req_buf->buffer + st->body_start,
-            req_buf->buffer + req_buf->size,
-            dechunked->buffer, dechunked->cap);
+        const ChunkResult dechunk_res = chunk_advance(
+            &st->dec,
+            next,
+            req_buf->buffer + req_buf->size - next,
+            dechunked->buffer + dechunked->size,
+            dechunked->cap - dechunked->size);
 
         switch (dechunk_res.parse_result.status) {
-            case PARSE_OK:
-                res.status = READ_BODY_OK;
-                dechunked->size += dechunk_res.bytes_written;
-                return res;
-            case PARSE_INCOMPLETE: dechunked->size += dechunk_res.bytes_written; break; // continue recv-ing
+            case PARSE_INCOMPLETE: break; // continue recv-ing
+            // continue recv-ing if not in terminal decoder state
+            case PARSE_OK: if (st->dec.phase == CHUNK_DONE) { res.status = READ_BODY_OK; return res; } break;
             default: res.status = READ_BODY_BAD_DATA; return res;
         }
+        if (dechunk_res.parse_result.status == PARSE_INCOMPLETE) break;
 
-        if (req_buf->size >= req_buf->cap) { res.status = READ_BODY_TOO_LARGE; break; }
+        next = dechunk_res.parse_result.next;
+        dechunked->size += dechunk_res.bytes_written;
 
+        if (dechunked->cap - dechunked->size <= 0) { res.status = READ_BODY_TOO_LARGE; return res; }
         const ssize_t got = recv(fd, req_buf->buffer + req_buf->size, req_buf->cap - req_buf->size, 0);
 
-        if (got == 0) { res.status = READ_BODY_PEER_CLOSED; break; }
-
+        if (got == 0) { res.status = READ_BODY_PEER_CLOSED; return res; }
         if (got < 0) { // -1
-            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
-            if (errno == EINTR) continue;
-            res.status = READ_BODY_IO_ERROR;
-            break;
+            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) res.status = READ_BODY_HAS_MORE;
+            else res.status = READ_BODY_IO_ERROR;
+            return res;
         }
 
         req_buf->size += got;
+        return res;
     }
-
-    return res;
 }
 
 static SendReponseStatus response_send(const int fd, const HttpBuffer * resp, SendSt * st) {
