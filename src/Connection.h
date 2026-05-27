@@ -74,7 +74,6 @@ typedef struct {
 typedef struct {
     size_t       body_start;
     ChunkDecoder dec;
-    HttpBuffer   dechunked;
 } ChunkedBodySt;
 
 typedef struct {
@@ -87,6 +86,7 @@ typedef struct {
     int keep_alive;
     HttpBuffer req_buf;
     HttpBuffer resp_buf;
+    HttpBuffer body_dechunked;
     HttpRequest req_parsed;
     size_t next_req_offset;
     size_t requests;
@@ -100,9 +100,9 @@ typedef struct {
 ReadHeaderResult recv_header(int fd, HttpBuffer * req);
 
 // invariant: result.body_received is in the set of [0, body_len]
-ReadBodyResult recv_body(int fd, HttpBuffer * req, CLBodySt * st);
+ReadBodyResult body_recv_cl(int fd, HttpBuffer * req, CLBodySt * st);
 
-ReadBodyResult recv_chunked_body(Connection * conn);
+ReadBodyResult body_recv_chunked(int fd, HttpBuffer *req_buf, HttpBuffer *dechunked, ChunkedBodySt * st);
 
 HttpResponse response_error_405(const char * const *allowed, size_t allowed_count, const HttpBuffer * allow_buf, ResponseHeader *h);
 

@@ -52,6 +52,7 @@ static void connection_close(ClientSet * client_set, int *pfd_i) {
     const Connection * conn = &client_set->conns[*pfd_i];
     free(conn->req_buf.buffer);
     free(conn->resp_buf.buffer);
+    free(conn->body_dechunked.buffer);
     close(client_set->poll_fd_set[*pfd_i].fd);
     del_from_client_set(client_set, *pfd_i);
     (*pfd_i)--; // re-examine the slot we just deleted

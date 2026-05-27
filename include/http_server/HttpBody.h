@@ -8,6 +8,7 @@
 #include "ParseResult.h"
 
 #define MAX_BODY_LEN (1 * 1024 * 1000)
+#define MAX_DECHUNK_SIZE (16 * 1024)
 
 typedef enum {
     TE_NONE,         // header absent

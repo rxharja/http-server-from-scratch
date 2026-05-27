@@ -81,6 +81,9 @@ int get_listener_socket(const char * port, const size_t backlog) {
 }
 
 static void connection_init(Connection * conn, const int new_fd) {
+    memset(&conn->req_parsed, 0, sizeof(conn->req_parsed));
+    memset(&conn->st, 0, sizeof(conn->st));
+
     conn->fd = new_fd;
     conn->req_buf.buffer = calloc(1, MAX_REQUEST_LEN * sizeof(char));
     conn->req_buf.cap = MAX_REQUEST_LEN;
@@ -90,11 +93,12 @@ static void connection_init(Connection * conn, const int new_fd) {
     conn->resp_buf.cap = RESPONSE_BUFFER_SIZE;
     conn->resp_buf.size = 0;
 
+    conn->body_dechunked.buffer = calloc(1, MAX_DECHUNK_SIZE * sizeof(char));
+    conn->body_dechunked.cap = MAX_DECHUNK_SIZE;
+    conn->body_dechunked.size = 0;
+
     conn->requests = 0;
     conn->phase = CONN_READING_REQUEST;
-
-    memset(&conn->req_parsed, 0, sizeof(conn->req_parsed));
-    memset(&conn->st, 0, sizeof(conn->st));
 }
 
 static void add_to_client_set(ClientSet *client_set, const int new_fd) {

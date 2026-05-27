@@ -74,7 +74,7 @@ ReadHeaderResult recv_header(const int fd, HttpBuffer * req) {
     return res;
 }
 
-ReadBodyResult recv_body(const int fd, HttpBuffer * req, CLBodySt * st) {
+ReadBodyResult body_recv_cl(const int fd, HttpBuffer * req, CLBodySt * st) {
     assert(req);
     assert(req->buffer);
     assert(st);
@@ -120,53 +120,49 @@ ReadBodyResult recv_body(const int fd, HttpBuffer * req, CLBodySt * st) {
 }
 
 // todo: rework to state machine for resuming where we left off between polls
-ReadBodyResult recv_chunked_body(Connection * conn) {
-    // ReadBodyResult res = {0};
-    // res.status = READ_BODY_HAS_MORE;
-    //
-    // while (1) {
-    //     const ChunkResult dechunk_res = body_dechunk(
-    //         conn->req.http_buffer.buffer,
-    //         conn->req.http_buffer.buffer + conn->req.already_have,
-    //         conn->body_dechunked.buffer, conn->body_dechunked.cap);
-    //
-    //     switch (dechunk_res.parse_result.status) {
-    //     case PARSE_OK:
-    //         res.status = READ_BODY_OK;
-    //         res.body_received = dechunk_res.chunk_size;
-    //         return res;
-    //     case PARSE_INCOMPLETE:
-    //         res.body_received = dechunk_res.chunk_size;
-    //         break; // continue recv-ing
-    //     default:
-    //         res.status = READ_BODY_BAD_DATA;
-    //         return res;
-    //     }
-    //
-    //     if (conn->req.already_have >= conn->req.http_buffer.cap) {
-    //         res.status = READ_BODY_TOO_LARGE;
-    //         break;
-    //     }
-    //
-    //     const ssize_t got = recv(conn->fd,
-    //         conn->req.http_buffer.buffer + conn->req.already_have,
-    //         conn->req.http_buffer.cap - conn->req.already_have, 0);
-    //
-    //     if (got == 0) {
-    //         res.status = READ_BODY_PEER_CLOSED;
-    //         break;
-    //     }
-    //
-    //     if (got < 0) { // -1
-    //         if (errno == EAGAIN || errno == EWOULDBLOCK) break;
-    //         if (errno == EINTR) continue;
-    //         res.status = READ_BODY_IO_ERROR;
-    //         break;
-    //     }
-    //     conn->req.already_have += got;
-    // }
-    //
-    // return res;
+ReadBodyResult body_recv_chunked(const int fd, HttpBuffer *req_buf, HttpBuffer *dechunked, ChunkedBodySt * st) {
+    assert(fd > 0);
+    assert(req_buf);
+    assert(req_buf->buffer);
+    assert(dechunked);
+    assert(dechunked->buffer);
+    assert(st);
+
+    ReadBodyResult res = {0};
+    res.status = READ_BODY_HAS_MORE;
+
+    while (1) {
+        const ChunkResult dechunk_res = body_dechunk(
+            req_buf->buffer,
+            req_buf->buffer + req_buf->size,
+            dechunked->buffer, dechunked->cap);
+
+        switch (dechunk_res.parse_result.status) {
+            case PARSE_OK:
+                res.status = READ_BODY_OK;
+                dechunked->size += dechunk_res.chunk_size;
+                return res;
+            case PARSE_INCOMPLETE: dechunked->size += dechunk_res.chunk_size; break; // continue recv-ing
+            default: res.status = READ_BODY_BAD_DATA; return res;
+        }
+
+        if (req_buf->size >= req_buf->cap) { res.status = READ_BODY_TOO_LARGE; break; }
+
+        const ssize_t got = recv(fd, req_buf->buffer + req_buf->size, req_buf->cap - req_buf->size, 0);
+
+        if (got == 0) { res.status = READ_BODY_PEER_CLOSED; break; }
+
+        if (got < 0) { // -1
+            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+            if (errno == EINTR) continue;
+            res.status = READ_BODY_IO_ERROR;
+            break;
+        }
+
+        req_buf->size += got;
+    }
+
+    return res;
 }
 
 SendReponseStatus response_send(const int fd, const HttpBuffer * resp, SendSt * st) {
@@ -323,7 +319,11 @@ static ConnPhase step_header_read(Connection * conn) {
 
     // dispatch
     if (coding == TE_CHUNKED) {
-        // todo: handle ChunkedBodySt
+        conn->st.chunked = (ChunkedBodySt) {
+            .body_start = header_res.body_start,
+            .dec = {0},
+        };
+        conn->body_dechunked.size = 0;
         return CONN_READING_BODY_CHUNKED;
     }
 
@@ -348,7 +348,7 @@ static ConnPhase step_body_cl_read(Connection * conn) {
     assert(conn);
     assert(conn->phase == CONN_READING_BODY_CL);
 
-    const ReadBodyResult body_res = recv_body(conn->fd, &conn->req_buf, &conn->st.cl);
+    const ReadBodyResult body_res = body_recv_cl(conn->fd, &conn->req_buf, &conn->st.cl);
 
     // body_res set to this when we have read the full content length or more.
     if (body_res.status == READ_BODY_OK) {
@@ -362,6 +362,28 @@ static ConnPhase step_body_cl_read(Connection * conn) {
     // fall through case is not a valid read result.
     response_error_serialize(&conn->resp_buf, PARSE_BAD_REQUEST);
     return CONN_SENDING_RESPONSE;
+}
+
+static ConnPhase step_body_chunked_read(Connection * conn) {
+    assert(conn);
+    assert(conn->phase == CONN_READING_BODY_CHUNKED);
+
+    const ReadBodyResult body_res = body_recv_chunked(conn->fd, &conn->req_buf, &conn->body_dechunked, &conn->st.chunked);
+
+    switch (body_res.status) {
+        case READ_BODY_OK:
+            conn->req_parsed.body_len = conn->body_dechunked.size;
+            conn->next_req_offset = body_res.next_req_offset;
+            return CONN_BUILDING;
+        case READ_BODY_HAS_MORE:
+            return CONN_READING_BODY_CHUNKED;
+        case READ_BODY_TOO_LARGE:
+            response_error_serialize(&conn->resp_buf, PARSE_PAYLOAD_TOO_LARGE);
+            return CONN_SENDING_RESPONSE;
+        default:
+            response_error_serialize(&conn->resp_buf, PARSE_BAD_REQUEST);
+            return CONN_SENDING_RESPONSE;
+    }
 }
 
 static ConnPhase step_response_build(Connection * conn, const Router * router) {
@@ -433,82 +455,14 @@ static ConnPhase step_response_send(Connection * conn) {
 }
 
 KeepAliveStatus connection_step_process(Connection * conn, const Router * router) {
-    switch (conn->phase) {
-        case CONN_READING_REQUEST:
-            conn->phase = step_header_read(conn);
-            break;
-        case CONN_READING_BODY_CL:
-            conn->phase = step_body_cl_read(conn);
-            break;
-        case CONN_READING_BODY_CHUNKED:
-            // TODO: rework chunked based parsing
-            response_error_serialize(&conn->resp_buf, PARSE_NOT_IMPLEMENTED);
-            conn->phase = CONN_SENDING_RESPONSE;
-            break;
-        case CONN_BUILDING:
-            conn->phase = step_response_build(conn, router);
-            break;
-        case CONN_SENDING_RESPONSE:
-            conn->phase = step_response_send(conn);
-            break;
-        case CONN_CLOSED:
-            conn->keep_alive ? CONN_READING_REQUEST : CONN_CLOSED;
-            break;
-    }
+    do {
+        switch (conn->phase) {
+            case CONN_READING_REQUEST:      conn->phase = step_header_read(conn);                  break;
+            case CONN_READING_BODY_CL:      conn->phase = step_body_cl_read(conn);                 break;
+            case CONN_READING_BODY_CHUNKED: conn->phase = step_body_chunked_read(conn);            break;
+            case CONN_BUILDING:             conn->phase = step_response_build(conn, router);       break;
+            case CONN_SENDING_RESPONSE:     conn->phase = step_response_send(conn);                break;
+            case CONN_CLOSED:               /* unreachable */                                      break;
+        }
+    } while (conn->phase == CONN_BUILDING);
 }
-
-// KeepAliveStatus handle_connection(Connection * conn, const Router * router) {
-    // KeepAliveStatus status = {0};
-    // HttpResponse res = to_http_error(PARSE_BAD_REQUEST);
-    // ResponseHeader allow_h = {0};
-    // char res_allow_buf[128] = {0};
-    // HttpBuffer allow_buf = {.buffer = res_allow_buf, .cap = 128 };
-    // HttpRequest *req = calloc(1, sizeof(HttpRequest));
-    // if (!req) goto serve;
-
-    // const ReadHeaderResult header_res = recv_header(conn->fd, &conn->req_buf);
-    // if (header_res.status != READ_HEADER_OK) {
-    //     res = to_http_error(header_res.status == READ_HEADER_TOO_LARGE
-    //         ? PARSE_HEADER_TOO_LONG : PARSE_BAD_REQUEST);
-    //     goto serve;
-    // }
-
-    // conn->req_buf.size = header_res.total_received;
-
-    // we don't increment buffer size here of the request because we're not reading anymore from the connection
-    // const ParseResult parse_req_res = parse_request(conn->req_buf.buffer, conn->req_buf.size, req);
-    // if (parse_req_res.status != PARSE_OK) {
-    //     res = to_http_error(parse_req_res.status);
-    //     goto serve;
-    // }
-
-    // HTTP/1.1 requires having a host header
-    // if (!ascii_ieq(req->request_line.version, "http/1.0")) {
-    //     const Header * host_header = get_header(req->headers, req->header_count, "host");
-    //     if (!host_header) { res = to_http_error(PARSE_BAD_REQUEST); goto serve; }
-    //
-    //     // Keep-Alive or close decision, next req offset set.
-    //     const Header * ka_header = get_header(req->headers, req->header_count, "connection");
-    //     // default to keep alive if we don't have a connection header
-    //     if (!ka_header || ascii_ieq("keep-alive", ka_header->value)) status.keep_alive = 1;
-    //     // otherwise we stay at 0 since it will be connection: close
-    // }
-
-    // TransferCoding coding = TE_NONE;
-    // ParseStatus te_status = PARSE_OK;
-    // for (int i = 0; i < req->header_count; i++) {
-    //     if (coding == TE_UNSUPPORTED || te_status != PARSE_OK) break;
-    //     if (!ascii_ieq(req->headers[i].key, "transfer-encoding")) continue;
-    //     te_status = parse_transfer_encoding(req->headers[i].value, &coding);
-    // }
-
-    // if (coding == TE_UNSUPPORTED) { res = to_http_error(PARSE_NOT_IMPLEMENTED); goto serve; }
-    // if (te_status != PARSE_OK)    { res = to_http_error(te_status);               goto serve; }
-
-//     ReadBodyResult body_res = {0};
-//     if (coding == TE_CHUNKED) {
-//         body_res = recv_chunked_body(conn);
-//         if (body_res.status != READ_BODY_OK) { res = to_http_error(PARSE_BAD_REQUEST); goto serve; }
-//         req->body_len = body_res.body_received;
-//     }
-// }
