@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <sys/poll.h>
+#include <assert.h>
 #include "Connection.h"
 #include "Networking.h"
 
@@ -33,13 +34,15 @@ static int has_duplicate_routes(const Router * router) {
 }
 
 static short conn_phase_event(const ConnPhase phase) {
+    assert(phase != CONN_BUILDING); // this work is CPU-bound, dispatch loop should not need to worry about this
+
     switch (phase) {
         case CONN_READING_REQUEST:
         case CONN_READING_BODY_CL:
         case CONN_READING_BODY_CHUNKED:  return POLLIN;
-        case CONN_BUILDING:              return 0;        // synchronous; see note below
         case CONN_SENDING_RESPONSE:      return POLLOUT;
-        case CONN_CLOSED:                return 0;        // about to remove from set
+        case CONN_CLOSED:                return 0; // about to remove from set
+        default: assert(0); return 0;
     }
 
     return 0;
