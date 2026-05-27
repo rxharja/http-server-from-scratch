@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <assert.h>
 #include "parser.h"
 
 static int write_header(char * write_buf, const size_t cap, const ResponseHeader * header) {
@@ -34,7 +35,7 @@ static int write_connection(char * write_buf, const size_t cap, const int keep_a
     return snprintf(write_buf, cap, format);
 }
 
-ssize_t serialize_response(const HttpResponse * resp, char * buffer, const size_t buffer_size, const int keep_alive) {
+ssize_t response_serialize(const HttpResponse * resp, char * buffer, const size_t buffer_size, const int keep_alive) {
     ssize_t offset = 0;
 
     // Start line

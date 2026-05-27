@@ -71,15 +71,15 @@ int run_server(const char * port, const Router * router, const size_t backlog) {
     // temporarily manually allocating, but for an embedded deploy we should allocate everything upfront
     ClientSet client_set = {0};
     client_set.fd_size = 8;
-    client_set.poll_fd_set = malloc(sizeof(*client_set.poll_fd_set) * client_set.fd_size);
-    client_set.conns = malloc(sizeof(*client_set.conns) * client_set.fd_size);
+    client_set.poll_fd_set = calloc(1, sizeof(*client_set.poll_fd_set) * client_set.fd_size);
+    client_set.conns = calloc(1, sizeof(*client_set.conns) * client_set.fd_size);
     client_set.poll_fd_set[0].fd = listener;
     client_set.poll_fd_set[0].events = POLLIN;
     client_set.poll_fd_set[0].revents = 0;
     client_set.fd_count = 1;
 
     for (;;) {
-        const int poll_count = poll(client_set.poll_fd_set, client_set.fd_size, -1);
+        const int poll_count = poll(client_set.poll_fd_set, client_set.fd_count, -1);
 
         if (poll_count == -1) {
             perror("poll");

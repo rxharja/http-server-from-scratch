@@ -25,6 +25,6 @@ typedef struct {
 
 HttpResponse from_static(const HttpRequest * req, const char * buf, size_t len);
 
-ssize_t serialize_response(const HttpResponse * resp, char * buffer, size_t buffer_size, int keep_alive);
+ssize_t response_serialize(const HttpResponse * resp, char * buffer, size_t buffer_size, int keep_alive);
 
 #endif //HTTPSERVER_HEADER_H

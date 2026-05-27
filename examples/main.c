@@ -43,7 +43,7 @@ int main(const int argc, char *argv[]) {
     }
 
     Route routes[2] = {
-        { "GET", "/test", not_found },
+        { "GET",  "/test", not_found },
         { "POST", "/test", do_something }
     };
 
