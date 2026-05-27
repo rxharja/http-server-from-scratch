@@ -226,7 +226,7 @@ static void expect_parse_chunk_ok(const char *label,
     char dest[1024] = {0};
     const ChunkResult res = chunk_parse(input, input + input_len, dest, sizeof(dest));
     check(label, res.parse_result.status == PARSE_OK, "parse_chunk: not OK");
-    check(label, res.chunk_size == want_size, "parse_chunk: chunk_size mismatch");
+    check(label, res.bytes_written == want_size, "parse_chunk: chunk_size mismatch");
     if (want_size > 0 && want_data) {
         check(label, memcmp(dest, want_data, want_size) == 0,
               "parse_chunk: data mismatch");

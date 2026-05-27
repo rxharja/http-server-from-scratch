@@ -129,9 +129,9 @@ ReadBodyResult conn_recv_body_chunked(const int fd, HttpBuffer *req_buf, HttpBuf
         switch (dechunk_res.parse_result.status) {
             case PARSE_OK:
                 res.status = READ_BODY_OK;
-                dechunked->size += dechunk_res.chunk_size;
+                dechunked->size += dechunk_res.bytes_written;
                 return res;
-            case PARSE_INCOMPLETE: dechunked->size += dechunk_res.chunk_size; break; // continue recv-ing
+            case PARSE_INCOMPLETE: dechunked->size += dechunk_res.bytes_written; break; // continue recv-ing
             default: res.status = READ_BODY_BAD_DATA; return res;
         }
 
