@@ -9,7 +9,7 @@
 
 #include "parser.h"
 
-void set_parse_error(ParseResult *res, const ParseStatus status, const char * pos) {
+void parse_error_set(ParseResult *res, const ParseStatus status, const char * pos) {
     res->status = status;
     res->error_position = pos;
 }
@@ -33,7 +33,7 @@ int digit_value(const unsigned char c, const int base) {
 }
 
 // Malformed: empty, non-digit, mixed, leading SP/HTAB, trailing SP, +/- signs, 0x10, 1.5
-ParseStatus parse_uint(const char *s, const size_t len, const int base, const size_t max, size_t *out) {
+ParseStatus uint_parse(const char *s, const size_t len, const int base, const size_t max, size_t *out) {
     if (len == 0 || *s == '\0') return PARSE_BAD_REQUEST;
     size_t result = 0;
 
@@ -48,14 +48,14 @@ ParseStatus parse_uint(const char *s, const size_t len, const int base, const si
     return PARSE_OK;
 }
 
-int parse_http_date(const char *s, time_t *out) {
+int http_date_parse(const char *s, time_t *out) {
     struct tm tm = {0};
     if (strptime(s, HTTP_DATE_FMT, &tm) == NULL) return -1;
     *out = timegm(&tm);  // GNU/BSD extension; interprets tm as UTC
     return 0;
 }
 
-size_t format_http_date(time_t t, char *buf, const size_t buf_len) {
+size_t http_date_format(time_t t, char *buf, const size_t buf_len) {
     struct tm tm;
     gmtime_r(&t, &tm);
     return strftime(buf, buf_len, HTTP_DATE_FMT, &tm);

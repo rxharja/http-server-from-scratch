@@ -9,9 +9,9 @@
 
 #include "parser.h"
 
-ParseResult parse_header_key(const char * cur, const char * end, Header * header) {
+ParseResult header_key_parse(const char * cur, const char * end, Header * header) {
     ParseResult res = {0};
-    set_parse_error(&res, PARSE_BAD_REQUEST, cur);
+    parse_error_set(&res, PARSE_BAD_REQUEST, cur);
 
     if (cur >= end || !is_colon((unsigned char)*end)) return res;
 
@@ -20,7 +20,7 @@ ParseResult parse_header_key(const char * cur, const char * end, Header * header
         if (!is_tchar(*cur)) return res;
 
         if (count >= MAX_HEADER_KEY_LEN - 1) { // account for \0
-            set_parse_error(&res, PARSE_HEADER_KEY_TOO_LONG, cur);
+            parse_error_set(&res, PARSE_HEADER_KEY_TOO_LONG, cur);
             return res;
         }
 
@@ -34,19 +34,19 @@ ParseResult parse_header_key(const char * cur, const char * end, Header * header
     return res;
 }
 
-ParseResult parse_header_value(const char * cur, const char * end, Header * header) {
+ParseResult header_value_parse(const char * cur, const char * end, Header * header) {
     ParseResult res = {0};
-    set_parse_error(&res, PARSE_BAD_REQUEST, cur);
+    parse_error_set(&res, PARSE_BAD_REQUEST, cur);
 
     if (end - cur > MAX_HEADER_VALUE_LEN - 1) { // account for \0
-        set_parse_error(&res, PARSE_HEADER_VALUE_TOO_LONG, cur);
+        parse_error_set(&res, PARSE_HEADER_VALUE_TOO_LONG, cur);
         return res;
     }
 
     if (cur > end) return res; // empty field values are ok as per spec
 
-    cur = skip_ows(cur, end);
-    const char * trimmed_end = trim_trailing_ows(cur, end);
+    cur = ows_skip(cur, end);
+    const char * trimmed_end = ows_trim_trailing(cur, end);
     size_t count = 0;
     while (cur < trimmed_end) {
         if (!is_field_content_byte((unsigned char)*cur)) return res;
@@ -60,22 +60,22 @@ ParseResult parse_header_value(const char * cur, const char * end, Header * head
     return res;
 }
 
-ParseResult parse_header_line(const char * cur, const char * end, Header * headers, size_t * count) {
+ParseResult header_line_parse(const char * cur, const char * end, Header * headers, size_t * count) {
     ParseResult res = {0};
     if (cur >= end) {
-        set_parse_error(&res, PARSE_BAD_REQUEST, cur);
+        parse_error_set(&res, PARSE_BAD_REQUEST, cur);
         return res;
     }
 
     Header header = {0};
-    res = parse_header_key(cur, find_colon(cur, end), &header);
+    res = header_key_parse(cur, colon_find(cur, end), &header);
     if (res.status != PARSE_OK) return res;
 
-    res = parse_header_value(res.next, end, &header); // end points to crlf
+    res = header_value_parse(res.next, end, &header); // end points to crlf
     if (res.status != PARSE_OK) return res;
 
     if (*count >= MAX_HEADERS) {
-        set_parse_error(&res, PARSE_HEADER_TOO_LONG, cur);
+        parse_error_set(&res, PARSE_HEADER_TOO_LONG, cur);
         return res;
     }
 
@@ -84,7 +84,7 @@ ParseResult parse_header_line(const char * cur, const char * end, Header * heade
     return res;
 }
 
-ParseResult parse_crlf(const char * cur, const char * end) {
+ParseResult crlf_parse(const char * cur, const char * end) {
     ParseResult res = {0};
     if (cur + 2 <= end && is_crlf(cur)) {
         res.status = PARSE_OK;
@@ -92,12 +92,12 @@ ParseResult parse_crlf(const char * cur, const char * end) {
         return res;
     }
 
-    set_parse_error(&res, PARSE_BAD_REQUEST, cur);
+    parse_error_set(&res, PARSE_BAD_REQUEST, cur);
     return res;
 }
 
 // name must be null-terminated
-const Header * get_header(const Header * headers, const size_t header_count, const char * name) {
+const Header * header_find(const Header * headers, const size_t header_count, const char * name) {
     for (int i = 0; i < header_count; i++) {
         const Header *header = &headers[i];
         if (ascii_ieq(header->key, name)) return &headers[i];
@@ -106,7 +106,7 @@ const Header * get_header(const Header * headers, const size_t header_count, con
     return NULL;
 }
 
-void show_headers(const Header * headers, const size_t header_count) {
+void headers_show(const Header * headers, const size_t header_count) {
     for (int i = 0; i < header_count; i++) {
         printf("%s: %s\n", headers[i].key, headers[i].value);
     }

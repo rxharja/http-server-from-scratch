@@ -73,20 +73,22 @@ RouteLookupResult route_lookup(const Route routes[], size_t count, const char *m
 
 ContentCache * content_cache_create();
 
-int cache_static_dir(ContentCache * cache, const char * dir_path, const char * url_prefix);
+int static_dir_cache(ContentCache * cache, const char * dir_path, const char * url_prefix);
 
 int cache_file(ContentCache * cache, const char * url_path, CachedFile * file);
 
 void content_cache_free(ContentCache * cache);
 
-char* get_content_type(const char * path);
+char* content_type_get(const char * path);
 
-HttpResponse from_cached_file(const HttpRequest * req, const CachedFile * file);
+HttpResponse response_cached(const HttpRequest * req, const CachedFile * file);
 
-DynamicLookupResult dynamic_lookup(ContentCache *cache, const HttpRequest *req, const char *url_path);
+DynamicLookupResult cache_dynamic_lookup(ContentCache *cache, const HttpRequest *req, const char *url_path);
 
-HttpResponse make_304(const DynamicCachedFile *f);
+HttpResponse response_dynamic_304(const DynamicCachedFile *f);
 
-HttpResponse from_dynamic_cached_file(const DynamicCachedFile *f);
+HttpResponse response_dynamic(const DynamicCachedFile *f);
+
+int router_has_duplicate_routes(const Router * router);
 
 #endif //HTTPSERVER_HTTPROUTER_H

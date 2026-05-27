@@ -10,7 +10,7 @@
 #include <sys/types.h>
 #include "parser.h"
 
-HttpMethod parse_http_method(const char *s, const size_t len) {
+HttpMethod http_method_parse(const char *s, const size_t len) {
     if (memcmp(s, "GET", 3) == 0 && len == 3) return GET;
     if (memcmp(s, "POST", 4) == 0 && len == 4) return POST;
     if (memcmp(s, "PUT", 3) == 0 && len == 3) return PUT;
@@ -18,7 +18,7 @@ HttpMethod parse_http_method(const char *s, const size_t len) {
     return UNKNOWN;
 }
 
-char* show_http_method(const HttpMethod method) {
+char* http_method_show(const HttpMethod method) {
     if (method == GET) return "GET";
     if (method == POST) return "POST";
     if (method == PUT) return "PUT";
@@ -26,16 +26,16 @@ char* show_http_method(const HttpMethod method) {
     return "UNKNOWN";
 }
 
-ParseResult parse_method(const char * cur, const char *end, HttpRequestLine * line) {
+ParseResult method_parse(const char * cur, const char *end, HttpRequestLine * line) {
     ParseResult res = {0};
-    set_parse_error(&res, PARSE_BAD_REQUEST, cur);
+    parse_error_set(&res, PARSE_BAD_REQUEST, cur);
 
     if (cur >= end) return res;
     if (*cur == ' ') return res;
     const char *sp = memchr(cur, ' ', end - cur);
     if (!sp) return res;
 
-    line->method = parse_http_method(cur, sp - cur);
+    line->method = http_method_parse(cur, sp - cur);
     if (line->method == UNKNOWN) return res;
 
     res.status = PARSE_OK;
@@ -44,9 +44,9 @@ ParseResult parse_method(const char * cur, const char *end, HttpRequestLine * li
 }
 
 
-ParseResult parse_uri(const char * cur, const char *end, HttpRequestLine * line) {
+ParseResult uri_parse(const char * cur, const char *end, HttpRequestLine * line) {
     ParseResult res = {0};
-    set_parse_error(&res, PARSE_BAD_REQUEST, cur);
+    parse_error_set(&res, PARSE_BAD_REQUEST, cur);
 
     if (cur >= end) return res;
 
@@ -78,23 +78,23 @@ ParseResult parse_uri(const char * cur, const char *end, HttpRequestLine * line)
         }
 
         if (*len_ptr >= cap - 1) {
-            set_parse_error(&res, PARSE_URI_TOO_LONG, cur + i - 1);
+            parse_error_set(&res, PARSE_URI_TOO_LONG, cur + i - 1);
             return res;
         }
 
         if (c == '%') {
             if (cur + i + 2 > sp) {
-                set_parse_error(&res, PARSE_BAD_REQUEST, cur + i - 1);
+                parse_error_set(&res, PARSE_BAD_REQUEST, cur + i - 1);
                 return res;
             }
 
             if (!is_hex((u_char)cur[i]) || !is_hex((u_char)cur[i + 1])) {
-                set_parse_error(&res, PARSE_BAD_REQUEST, cur + i - 1);
+                parse_error_set(&res, PARSE_BAD_REQUEST, cur + i - 1);
                 return res;
             }
 
             if (*len_ptr + 3 > cap - 1) {
-                set_parse_error(&res, PARSE_URI_TOO_LONG, cur + i - 1);
+                parse_error_set(&res, PARSE_URI_TOO_LONG, cur + i - 1);
                 return res;
             }
 
@@ -115,9 +115,9 @@ ParseResult parse_uri(const char * cur, const char *end, HttpRequestLine * line)
     return res;
 }
 
-ParseResult parse_version(const char * cur, const char *end, HttpRequestLine * line) {
+ParseResult version_parse(const char * cur, const char *end, HttpRequestLine * line) {
     ParseResult res = {0};
-    set_parse_error(&res, PARSE_BAD_REQUEST, cur);
+    parse_error_set(&res, PARSE_BAD_REQUEST, cur);
     if (end - cur != VERSION_LEN) return res;
     if (memcmp("HTTP/", cur, 5) != 0) return res;
 
@@ -132,7 +132,7 @@ ParseResult parse_version(const char * cur, const char *end, HttpRequestLine * l
                            || memcmp(&cur[5], "1.1", 3) == 0;
 
     if (!valid_version) {
-        set_parse_error(&res, PARSE_VERSION_NOT_SUPPORTED, cur);
+        parse_error_set(&res, PARSE_VERSION_NOT_SUPPORTED, cur);
         return res;
     }
 
@@ -143,18 +143,18 @@ ParseResult parse_version(const char * cur, const char *end, HttpRequestLine * l
     return res;
 }
 
-ParseResult parse_request_line(const char * cur, const char *end, HttpRequestLine * line) {
-    const ParseResult method_res = parse_method(cur, end, line);
+ParseResult request_line_parse(const char * cur, const char *end, HttpRequestLine * line) {
+    const ParseResult method_res = method_parse(cur, end, line);
     if (method_res.status != PARSE_OK) return method_res;
 
-    const ParseResult uri_res = parse_uri(method_res.next, end, line);
+    const ParseResult uri_res = uri_parse(method_res.next, end, line);
     if (uri_res.status != PARSE_OK) return uri_res;
 
-    const ParseResult version_res = parse_version(uri_res.next, end, line);
+    const ParseResult version_res = version_parse(uri_res.next, end, line);
     return version_res;
 }
 
-void show_request_line(const HttpRequestLine * line) {
-    printf("%s %s%s %s\n", show_http_method(line->method), line->path, line->query, line->version);
+void request_line_show(const HttpRequestLine * line) {
+    printf("%s %s%s %s\n", http_method_show(line->method), line->path, line->query, line->version);
 }
 

@@ -37,7 +37,7 @@ int main(const int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    if (port_is_valid(argv[1]) != 0) {
+    if (server_port_valid(argv[1]) != 0) {
         printf("Invalid port number\n");
         exit(EXIT_FAILURE);
     }
@@ -53,9 +53,9 @@ int main(const int argc, char *argv[]) {
         .routes = routes
     };
 
-    cache_static_dir(router.static_cache, "wwwroot", NULL);
+    static_dir_cache(router.static_cache, "wwwroot", NULL);
 
-    run_server(argv[1], &router, BACKLOG);
+    server_run(argv[1], &router, BACKLOG);
 
     content_cache_free(router.static_cache);
 

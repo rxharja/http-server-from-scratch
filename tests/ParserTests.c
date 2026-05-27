@@ -21,7 +21,7 @@ static void check(const char *label, const int ok, const char *detail) {
 
 static void expect_method(const char *label, const char *input, const HttpMethod want) {
     HttpRequestLine r = {0};
-    parse_method(input, input + strlen(input), &r);
+    method_parse(input, input + strlen(input), &r);
     check(label, r.method == want, "method mismatch");
 }
 
@@ -30,13 +30,13 @@ static void expect_method(const char *label, const char *input, const HttpMethod
 static void expect_method_full(const char *label, const char *input,
                                const ParseStatus want_status, const HttpMethod want_method) {
     HttpRequestLine r = {0};
-    const ParseResult res = parse_method(input, input + strlen(input), &r);
+    const ParseResult res = method_parse(input, input + strlen(input), &r);
     check(label, res.status == want_status && r.method == want_method, "method/status mismatch");
 }
 
 static void expect_uri(const char *label, const char *input, const ParseStatus want) {
     HttpRequestLine r = {0};
-    const ParseResult res = parse_uri(input, input + strlen(input), &r);
+    const ParseResult res = uri_parse(input, input + strlen(input), &r);
     check(label, res.status == want, "uri mismatch");
 }
 
@@ -44,7 +44,7 @@ static void expect_version(const char *label, const char *input, const ParseStat
     HttpRequestLine r = {0};
     // Contract: caller (parse_request_line) hands parse_version the bare
     // version field — CRLF already stripped. Tests mirror that: end = start + len.
-    const ParseResult res = parse_version(input, input + strlen(input), &r);
+    const ParseResult res = version_parse(input, input + strlen(input), &r);
     check(label, res.status == want, "version mismatch");
 }
 
@@ -52,20 +52,20 @@ static void expect_version(const char *label, const char *input, const ParseStat
 // pass inputs containing embedded NULs or trailing bytes the parser shouldn't see.
 static void expect_version_n(const char *label, const char *input, const size_t len, const ParseStatus want) {
     HttpRequestLine r = {0};
-    const ParseResult res = parse_version(input, input + len, &r);
+    const ParseResult res = version_parse(input, input + len, &r);
     check(label, res.status == want, "version mismatch");
 }
 
 static void expect_uri_with_query(const char *label, const char *input, const char * query, const ParseStatus want) {
     HttpRequestLine r = {0};
-    const ParseResult res = parse_uri(input, input + strlen(input), &r);
+    const ParseResult res = uri_parse(input, input + strlen(input), &r);
     check(label, res.status == want, "uri mismatch");
     if (want == PARSE_OK) check(label, strcmp(r.query, query) == 0, "query mismatch");
 }
 
 static void expect_uri_with_path(const char *label, const char *input, const char *path, const ParseStatus want) {
     HttpRequestLine r = {0};
-    const ParseResult res = parse_uri(input, input + strlen(input), &r);
+    const ParseResult res = uri_parse(input, input + strlen(input), &r);
     check(label, res.status == want, "uri status mismatch");
     check(label, strcmp(r.path, path) == 0, "path mismatch");
 }
@@ -74,13 +74,13 @@ static void expect_uri_with_path(const char *label, const char *input, const cha
 // by the caller. Tests pass bare request lines (no trailing CRLF).
 static void expect_request_line(const char *label, const char *input, const ParseStatus want) {
     HttpRequestLine r = {0};
-    const ParseResult res = parse_request_line(input, input + strlen(input), &r);
+    const ParseResult res = request_line_parse(input, input + strlen(input), &r);
     check(label, res.status == want, "request_line status mismatch");
 }
 
 static void expect_status(const char *label, const char *input, const ParseStatus want) {
     HttpRequest r = {0};
-    const ParseResult res = parse_request(input, strlen(input), &r);
+    const ParseResult res = request_parse(input, strlen(input), &r);
     check(label, res.status == want, "status mismatch");
 }
 
@@ -88,13 +88,13 @@ static void expect_status(const char *label, const char *input, const ParseStatu
 static void expect_status_n(const char *label, const char *input, const size_t len,
                             const ParseStatus want) {
     HttpRequest r = {0};
-    const ParseResult res = parse_request(input, len, &r);
+    const ParseResult res = request_parse(input, len, &r);
     check(label, res.status == want, "status mismatch");
 }
 
 static void expect_crlf(const char *label, const char *input, const size_t len,
                         const ParseStatus want) {
-    const ParseResult res = parse_crlf(input, input + len);
+    const ParseResult res = crlf_parse(input, input + len);
     check(label, res.status == want, "crlf status mismatch");
 }
 
@@ -105,7 +105,7 @@ static void expect_header_key(const char *label, const char *input,
     Header h = {0};
     const char *colon = strchr(input, ':');
     const char *end = colon ? colon : input + strlen(input);
-    const ParseResult res = parse_header_key(input, end, &h);
+    const ParseResult res = header_key_parse(input, end, &h);
     check(label, res.status == want_status, "header_key status mismatch");
     if (want_status == PARSE_OK && want_key != NULL) {
         check(label, strcmp(h.key, want_key) == 0, "header_key value mismatch");
@@ -117,7 +117,7 @@ static void expect_header_key(const char *label, const char *input,
 static void expect_header_value(const char *label, const char *input,
                                 const char *want_value, const ParseStatus want_status) {
     Header h = {0};
-    const ParseResult res = parse_header_value(input, input + strlen(input), &h);
+    const ParseResult res = header_value_parse(input, input + strlen(input), &h);
     check(label, res.status == want_status, "header_value status mismatch");
     if (want_status == PARSE_OK && want_value != NULL) {
         check(label, strcmp(h.value, want_value) == 0, "header_value content mismatch");
@@ -128,7 +128,7 @@ static void expect_header_value(const char *label, const char *input,
 static void expect_header_value_n(const char *label, const char *input, const size_t len,
                                   const ParseStatus want_status) {
     Header h = {0};
-    const ParseResult res = parse_header_value(input, input + len, &h);
+    const ParseResult res = header_value_parse(input, input + len, &h);
     check(label, res.status == want_status, "header_value status mismatch");
 }
 
@@ -138,7 +138,7 @@ static void expect_header_line(const char *label, const char *input,
                                const char *want_key, const char *want_value,
                                const ParseStatus want_status) {
     HttpRequest r = {0};
-    const ParseResult res = parse_header_line(input, input + strlen(input), r.headers, &r.header_count);
+    const ParseResult res = header_line_parse(input, input + strlen(input), r.headers, &r.header_count);
     check(label, res.status == want_status, "header_line status mismatch");
     if (want_status == PARSE_OK) {
         check(label, r.header_count == 1, "header_count != 1 after one parse");
@@ -154,7 +154,7 @@ static void expect_header_line(const char *label, const char *input,
 // get_header lookup. want_value == NULL means the helper expects NULL back (not found).
 static void expect_get_header(const char *label, const HttpRequest *req,
                               const char *name, const char *want_value) {
-    const Header *h = get_header(req->headers, req->header_count, name);
+    const Header *h = header_find(req->headers, req->header_count, name);
     if (want_value == NULL) {
         check(label, h == NULL, "expected NULL but got a header");
     } else {
@@ -171,7 +171,7 @@ static void expect_get_header(const char *label, const HttpRequest *req,
 static void expect_content_length(const char *label, const char *input,
                                   const ParseStatus want_status, const size_t want_value) {
     size_t out = 0;
-    const ParseStatus got = parse_content_length(input, &out);
+    const ParseStatus got = content_length_parse(input, &out);
     check(label, got == want_status, "content_length status mismatch");
     if (want_status == PARSE_OK) {
         check(label, out == want_value, "content_length value mismatch");
@@ -189,7 +189,7 @@ static void expect_transfer_encoding(const char *label, const char *input,
                                      const ParseStatus want_status,
                                      const TransferCoding want_te) {
     TransferCoding out = TE_NONE;
-    const ParseStatus got = parse_transfer_encoding(input, &out);
+    const ParseStatus got = transfer_encoding_parse(input, &out);
     check(label, got == want_status, "transfer_encoding status mismatch");
     if (want_status == PARSE_OK || want_status == PARSE_NOT_IMPLEMENTED) {
         check(label, out == want_te, "transfer_encoding output mismatch");
@@ -210,7 +210,7 @@ static void expect_parse_uint(const char *label, const char *input, const size_t
                               const int base, const size_t max,
                               const ParseStatus want_status, const size_t want_value) {
     size_t out = 0;
-    const ParseStatus got = parse_uint(input, len, base, max, &out);
+    const ParseStatus got = uint_parse(input, len, base, max, &out);
     check(label, got == want_status, "parse_uint status mismatch");
     if (want_status == PARSE_OK) {
         check(label, out == want_value, "parse_uint value mismatch");
@@ -224,7 +224,7 @@ static void expect_parse_chunk_ok(const char *label,
                                   const size_t want_size, const char *want_data,
                                   const size_t want_consumed) {
     char dest[1024] = {0};
-    const ChunkResult res = parse_chunk(input, input + input_len, dest, sizeof(dest));
+    const ChunkResult res = chunk_parse(input, input + input_len, dest, sizeof(dest));
     check(label, res.parse_result.status == PARSE_OK, "parse_chunk: not OK");
     check(label, res.chunk_size == want_size, "parse_chunk: chunk_size mismatch");
     if (want_size > 0 && want_data) {
@@ -240,7 +240,7 @@ static void expect_parse_chunk_err(const char *label,
                                    const char *input, const size_t input_len,
                                    const ParseStatus want_status) {
     char dest[1024] = {0};
-    const ChunkResult res = parse_chunk(input, input + input_len, dest, sizeof(dest));
+    const ChunkResult res = chunk_parse(input, input + input_len, dest, sizeof(dest));
     check(label, res.parse_result.status == want_status, "parse_chunk: status mismatch");
 }
 
@@ -695,8 +695,8 @@ int main(void) {
         "Hello, World!";
 
     HttpRequest req = {0};
-    parse_request(req_body, 170, &req);
-    show_request(&req);
+    request_parse(req_body, 170, &req);
+    request_show(&req);
 
     printf("\n%d/%d passed\n", total - failed, total);
     return failed ? 1 : 0;

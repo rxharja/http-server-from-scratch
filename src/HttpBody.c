@@ -8,24 +8,24 @@
 
 #include "parser.h"
 
-ParseStatus parse_content_length(const char *val, size_t *out) {
-    return parse_uint(val, strlen(val), 10, MAX_BODY_LEN, out);
+ParseStatus content_length_parse(const char *val, size_t *out) {
+    return uint_parse(val, strlen(val), 10, MAX_BODY_LEN, out);
 }
 
-ChunkResult parse_chunk(const char * buf, const char * end, char * dest, size_t cap) {
+ChunkResult chunk_parse(const char * buf, const char * end, char * dest, size_t cap) {
     ChunkResult res = {0};
     const char * cur = buf;
 
     // parse length and handle ext
     size_t len;
-    const char * crlf = find_crlf(cur, end);
+    const char * crlf = crlf_find(cur, end);
     if (!crlf || (crlf == end && end[0] != '\r' && end[1] != '\n')) {
-        set_parse_error(&res.parse_result, PARSE_INCOMPLETE, cur);
+        parse_error_set(&res.parse_result, PARSE_INCOMPLETE, cur);
         return res;
     }
     const char *size_end = memchr(cur, ';', crlf - cur);
     if (!size_end) size_end = crlf;
-    res.parse_result.status = parse_uint(cur, size_end - cur, 16, MAX_BODY_LEN, &len);
+    res.parse_result.status = uint_parse(cur, size_end - cur, 16, MAX_BODY_LEN, &len);
     if (res.parse_result.status != PARSE_OK) return res;
 
     cur = crlf + 2; //advance past crlf
@@ -38,16 +38,16 @@ ChunkResult parse_chunk(const char * buf, const char * end, char * dest, size_t 
 
     // parse content
     if (cur + len + 2 > end) {
-        set_parse_error(&res.parse_result, PARSE_INCOMPLETE, cur);
+        parse_error_set(&res.parse_result, PARSE_INCOMPLETE, cur);
         return res;
     }
     if (cur[len] != '\r' || cur[len + 1] != '\n' ) {
-        set_parse_error(&res.parse_result, PARSE_BAD_REQUEST, cur);
+        parse_error_set(&res.parse_result, PARSE_BAD_REQUEST, cur);
         return res;
     }
 
     if (len >= cap) {
-        set_parse_error(&res.parse_result, PARSE_PAYLOAD_TOO_LARGE, cur);
+        parse_error_set(&res.parse_result, PARSE_PAYLOAD_TOO_LARGE, cur);
         return res;
     }
 
@@ -64,7 +64,7 @@ ChunkResult body_dechunk(const char * buf, const char * end, char * dest, const 
     ChunkResult c = {0};
     while (1) {
         const size_t remaining = cap > total ? cap - total : 0;
-        c = parse_chunk(cur, end, dest + total, remaining);
+        c = chunk_parse(cur, end, dest + total, remaining);
         total += c.chunk_size;
         if (c.parse_result.status != PARSE_OK) {
             c.chunk_size = total; // accumulate it here
@@ -77,15 +77,15 @@ ChunkResult body_dechunk(const char * buf, const char * end, char * dest, const 
     while (1) {
         if (cur + 2 > end) {
             c.chunk_size = total;
-            set_parse_error(&c.parse_result, PARSE_INCOMPLETE, cur);
+            parse_error_set(&c.parse_result, PARSE_INCOMPLETE, cur);
             return c;
         }
 
         if (cur[0] == '\r' && cur[1] == '\n') { cur += 2; break; }   // body terminator
-        const char *crlf = find_crlf(cur, end);
+        const char *crlf = crlf_find(cur, end);
         if (!crlf) {
             c.chunk_size = total;
-            set_parse_error(&c.parse_result, PARSE_INCOMPLETE, cur);
+            parse_error_set(&c.parse_result, PARSE_INCOMPLETE, cur);
             return c;
         }
         cur = crlf + 2;
@@ -121,7 +121,7 @@ static int eq_chunked(const char *start, const size_t len) {
 //                              - non-token bytes in a coding name,
 //                              - chunked appears but isn't last in the list (RFC 9112 §6.1),
 //                              - chunked appears more than once.
-ParseStatus parse_transfer_encoding(const char *val, TransferCoding *coding) {
+ParseStatus transfer_encoding_parse(const char *val, TransferCoding *coding) {
     *coding = TE_NONE;
     const char *cur = val;
     const char *end = val + strlen(val);
@@ -132,15 +132,15 @@ ParseStatus parse_transfer_encoding(const char *val, TransferCoding *coding) {
     int has_unsupported  = 0;
 
     while (cur < end) {
-        const char *tok_start = skip_ows(cur, end);
+        const char *tok_start = ows_skip(cur, end);
         while (cur < end && *cur != ',') cur++;
-        const char *tok_end = trim_trailing_ows(tok_start, cur);
+        const char *tok_end = ows_trim_trailing(tok_start, cur);
 
         if (tok_start < tok_end) {
             // Strip ;-parameters from the coding name (we don't process params for chunked,
             // and any non-chunked coding is rejected anyway).
             const char  *semi     = memchr(tok_start, ';', tok_end - tok_start);
-            const char  *name_end = semi ? trim_trailing_ows(tok_start, semi) : tok_end;
+            const char  *name_end = semi ? ows_trim_trailing(tok_start, semi) : tok_end;
             const size_t name_len = (size_t)(name_end - tok_start);
 
             // Empty coding name (e.g., ";param=value" with no token in front) → malformed.

@@ -22,8 +22,8 @@ typedef struct {
     size_t body_len;
 } HttpRequest;
 
-void show_request(const HttpRequest * req);
+void request_show(const HttpRequest * req);
 
-ParseResult parse_request(const char *buf, size_t len, HttpRequest *req);
+ParseResult request_parse(const char *buf, size_t len, HttpRequest *req);
 
 #endif //HTTPREQUEST_H

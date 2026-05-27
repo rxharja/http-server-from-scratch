@@ -6,23 +6,23 @@
 #define HTTPSERVER_PARSER_H
 #include <stddef.h>
 
-const char * find_crlf(const char * cur, const char * end);
+const char * crlf_find(const char * cur, const char * end);
 
 int is_crlf(const char * cur);
 
 int is_ows(unsigned char c);
 
 // advances cur past leading SP/HTAB; returns new position.
-const char * skip_ows(const char * cur, const char *end);
+const char * ows_skip(const char * cur, const char *end);
 
 int is_colon(unsigned char c);
 
-const char *find_colon(const char *cur, const char *end);
+const char *colon_find(const char *cur, const char *end);
 
-const char *trim_back_to_comma(const char *start, const char *end);
+const char *range_trim_to_comma(const char *start, const char *end);
 
 // backs up end before SP/HTAB; returns new end.
-const char * trim_trailing_ows(const char * start, const char *end);
+const char * ows_trim_trailing(const char * start, const char *end);
 
 int is_hex(unsigned char c);
 
@@ -45,6 +45,6 @@ int is_field_content_byte(unsigned char c);
 
 int ascii_ieq(const char * a, const char * b);
 
-int ends_with(const char *str, const char *suffix);
+int str_ends_with(const char *str, const char *suffix);
 
 #endif //HTTPSERVER_PARSER_H

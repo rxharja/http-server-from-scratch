@@ -19,18 +19,7 @@
 
 struct addrinfo;
 
-int port_is_valid(const char * str) {
-    char *endptr;
-    errno = 0;
-
-    const long num = strtol(str, &endptr, 10);
-
-    if (errno != 0 || *endptr != '\0' || endptr == str) return 1;
-    if (num <= 0 || num > 65535) return 1;
-    return 0;
-}
-
-ReadHeaderResult recv_header(const int fd, HttpBuffer * req) {
+ReadHeaderResult conn_recv_header(const int fd, HttpBuffer * req) {
     assert(req);
     assert(req->buffer);
     assert(fd >= 0);
@@ -74,7 +63,7 @@ ReadHeaderResult recv_header(const int fd, HttpBuffer * req) {
     return res;
 }
 
-ReadBodyResult body_recv_cl(const int fd, HttpBuffer * req, CLBodySt * st) {
+ReadBodyResult conn_recv_body_cl(const int fd, HttpBuffer * req, CLBodySt * st) {
     assert(req);
     assert(req->buffer);
     assert(st);
@@ -120,7 +109,7 @@ ReadBodyResult body_recv_cl(const int fd, HttpBuffer * req, CLBodySt * st) {
 }
 
 // todo: rework to state machine for resuming where we left off between polls
-ReadBodyResult body_recv_chunked(const int fd, HttpBuffer *req_buf, HttpBuffer *dechunked, ChunkedBodySt * st) {
+ReadBodyResult conn_recv_body_chunked(const int fd, HttpBuffer *req_buf, HttpBuffer *dechunked, ChunkedBodySt * st) {
     assert(fd > 0);
     assert(req_buf);
     assert(req_buf->buffer);
@@ -252,7 +241,7 @@ static ConnPhase step_header_read(Connection * conn) {
     assert(conn);
     assert(conn->phase == CONN_READING_REQUEST);
 
-    const ReadHeaderResult header_res = recv_header(conn->fd, &conn->req_buf);
+    const ReadHeaderResult header_res = conn_recv_header(conn->fd, &conn->req_buf);
     if (header_res.status == READ_HEADER_HAS_MORE) return CONN_READING_REQUEST;
     if (header_res.status == READ_HEADER_PEER_CLOSED || header_res.status == READ_HEADER_IO_ERROR) return CONN_CLOSED;
     if (header_res.status != READ_HEADER_OK) {
@@ -261,7 +250,7 @@ static ConnPhase step_header_read(Connection * conn) {
         return phase_send_begin(conn);
     }
 
-    const ParseResult parse_res = parse_request(conn->req_buf.buffer, conn->req_buf.size, &conn->req_parsed);
+    const ParseResult parse_res = request_parse(conn->req_buf.buffer, conn->req_buf.size, &conn->req_parsed);
     if (parse_res.status != PARSE_OK) {
         response_error_serialize(&conn->resp_buf, parse_res.status);
         return phase_send_begin(conn);
@@ -271,13 +260,13 @@ static ConnPhase step_header_read(Connection * conn) {
     assert(header_res.total_received >= header_res.body_start);
 
     if (!ascii_ieq(conn->req_parsed.request_line.version, "http/1.0")) {
-        if (!get_header(conn->req_parsed.headers, conn->req_parsed.header_count, "host")) {
+        if (!header_find(conn->req_parsed.headers, conn->req_parsed.header_count, "host")) {
             response_error_serialize(&conn->resp_buf, PARSE_BAD_REQUEST);
             return phase_send_begin(conn);
         }
 
         // default to keep alive if we don't have a connection header
-        const Header * ka_header = get_header(conn->req_parsed.headers, conn->req_parsed.header_count, "connection");
+        const Header * ka_header = header_find(conn->req_parsed.headers, conn->req_parsed.header_count, "connection");
         if (!ka_header || ascii_ieq("keep-alive", ka_header->value)) conn->keep_alive = 1;
     }
 
@@ -286,7 +275,7 @@ static ConnPhase step_header_read(Connection * conn) {
     for (int i = 0; i < conn->req_parsed.header_count; i++) {
         if (coding == TE_UNSUPPORTED || te_status != PARSE_OK) break;
         if (!ascii_ieq(conn->req_parsed.headers[i].key, "transfer-encoding")) continue;
-        te_status = parse_transfer_encoding(conn->req_parsed.headers[i].value, &coding);
+        te_status = transfer_encoding_parse(conn->req_parsed.headers[i].value, &coding);
     }
 
     if (coding == TE_UNSUPPORTED) {
@@ -299,7 +288,7 @@ static ConnPhase step_header_read(Connection * conn) {
         return phase_send_begin(conn);
     }
 
-    const Header *ct_len_h = get_header(conn->req_parsed.headers, conn->req_parsed.header_count, "content-length");
+    const Header *ct_len_h = header_find(conn->req_parsed.headers, conn->req_parsed.header_count, "content-length");
 
     // prevent smuggling by returning 400
     if (ct_len_h && coding == TE_CHUNKED) {
@@ -309,7 +298,7 @@ static ConnPhase step_header_read(Connection * conn) {
 
     size_t body_len = 0;
     if (ct_len_h) {
-        const ParseStatus ps = parse_uint(ct_len_h->value, strlen(ct_len_h->value), 10, MAX_BODY_LEN, &body_len);
+        const ParseStatus ps = uint_parse(ct_len_h->value, strlen(ct_len_h->value), 10, MAX_BODY_LEN, &body_len);
         if (ps != PARSE_OK) {
             response_error_serialize(&conn->resp_buf, ps);
             return phase_send_begin(conn);
@@ -354,7 +343,7 @@ static ConnPhase step_body_cl_read(Connection * conn) {
     assert(conn);
     assert(conn->phase == CONN_READING_BODY_CL);
 
-    const ReadBodyResult body_res = body_recv_cl(conn->fd, &conn->req_buf, &conn->st.cl);
+    const ReadBodyResult body_res = conn_recv_body_cl(conn->fd, &conn->req_buf, &conn->st.cl);
 
     // body_res set to this when we have read the full content length or more.
     if (body_res.status == READ_BODY_OK) {
@@ -374,7 +363,7 @@ static ConnPhase step_body_chunked_read(Connection * conn) {
     assert(conn);
     assert(conn->phase == CONN_READING_BODY_CHUNKED);
 
-    const ReadBodyResult body_res = body_recv_chunked(conn->fd, &conn->req_buf, &conn->body_dechunked, &conn->st.chunked);
+    const ReadBodyResult body_res = conn_recv_body_chunked(conn->fd, &conn->req_buf, &conn->body_dechunked, &conn->st.chunked);
 
     switch (body_res.status) {
         case READ_BODY_OK:
@@ -407,20 +396,20 @@ static ConnPhase step_response_build(Connection * conn, const Router * router) {
 
     if (method == GET) {
         const CachedFile * sf = dict_find(router->static_cache, req->request_line.path);
-        if (sf) { res = from_cached_file(&conn->req_parsed, sf); goto build_resp; }
+        if (sf) { res = response_cached(&conn->req_parsed, sf); goto build_resp; }
 
-        const DynamicLookupResult d = dynamic_lookup(router->dynamic_cache, req, req->request_line.path);
+        const DynamicLookupResult d = cache_dynamic_lookup(router->dynamic_cache, req, req->request_line.path);
 
         switch (d.status) {
             case DYN_NOT_REGISTERED:                                       break;
             case DYN_GONE:         res = response_error_from_status(PARSE_NOT_FOUND); goto build_resp;
-            case DYN_NOT_MODIFIED: res = make_304(d.file);                 goto build_resp;
-            case DYN_HIT:          res = from_dynamic_cached_file(d.file); goto build_resp;
+            case DYN_NOT_MODIFIED: res = response_dynamic_304(d.file);                 goto build_resp;
+            case DYN_HIT:          res = response_dynamic(d.file); goto build_resp;
         }
     }
 
     const RouteLookupResult route_res =
-        route_lookup(router->routes, router->route_count, show_http_method(method), conn->req_parsed.request_line.path);
+        route_lookup(router->routes, router->route_count, http_method_show(method), conn->req_parsed.request_line.path);
 
     const Route *route = route_res.route;
     if      (route && !route->data)       res = route_res.route->handler.fn(req);

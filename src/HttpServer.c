@@ -8,28 +8,19 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <sys/poll.h>
+#include <errno.h>
 #include <assert.h>
 #include "Connection.h"
 #include "Networking.h"
 
-static int has_duplicate_routes(const Router * router) {
-    const char * get = show_http_method(GET);
+int server_port_valid(const char * str) {
+    char *endptr;
+    errno = 0;
 
-    for (int i = 0; i < router->route_count; i++) {
-        const Route * route = &router->routes[i];
-        if (route->method != get) continue;
-        const CachedFile * file = dict_find(router->static_cache, route->path);
-        if (file) return 1;
-    }
+    const long num = strtol(str, &endptr, 10);
 
-    for (int i = 0; i < router->route_count - 1; i++) {
-        const Route * route1 = &router->routes[i];
-        for (int j = 1; j < router->route_count; j++) {
-            const Route * route2 = &router->routes[j];
-            if (strcmp(route1->path, route2->path) == 0 && strcmp(route1->method, route2->method) == 0) return 1;
-        }
-    }
-
+    if (errno != 0 || *endptr != '\0' || endptr == str) return 1;
+    if (num <= 0 || num > 65535) return 1;
     return 0;
 }
 
@@ -54,17 +45,17 @@ static void connection_close(ClientSet * client_set, int *pfd_i) {
     free(conn->resp_buf.buffer);
     free(conn->body_dechunked.buffer);
     close(client_set->poll_fd_set[*pfd_i].fd);
-    del_from_client_set(client_set, *pfd_i);
+    client_set_delete(client_set, *pfd_i);
     (*pfd_i)--; // re-examine the slot we just deleted
 }
 
-int run_server(const char * port, const Router * router, const size_t backlog) {
-    if (has_duplicate_routes(router)) {
+int server_run(const char * port, const Router * router, const size_t backlog) {
+    if (router_has_duplicate_routes(router)) {
         perror("Cannot have duplicate routes.\n");
         exit(EXIT_FAILURE);
     }
 
-    const int listener = get_listener_socket(port, backlog);
+    const int listener = listener_socket_get(port, backlog);
     if (listener == -1) exit(EXIT_FAILURE);
     printf("server: Listening on port %s...\n", port);
 
@@ -88,7 +79,7 @@ int run_server(const char * port, const Router * router, const size_t backlog) {
             exit(1);
         }
 
-        if (client_set.poll_fd_set[0].revents & POLLIN) add_new_client(listener, &client_set);
+        if (client_set.poll_fd_set[0].revents & POLLIN) client_set_add_new(listener, &client_set);
 
         // Run through connections after 0 since that is the listener
         for(int i = 1; i < client_set.fd_count; i++) {

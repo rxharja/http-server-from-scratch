@@ -7,28 +7,28 @@
 #include <stdio.h>
 #include "parser.h"
 
-ParseResult parse_request(const char * buf, const size_t len, HttpRequest * req) {
+ParseResult request_parse(const char * buf, const size_t len, HttpRequest * req) {
     const char * cur = buf;
-    const char * end = trim_trailing_ows(cur, buf + len);
+    const char * end = ows_trim_trailing(cur, buf + len);
 
-    ParseResult req_line_res = parse_request_line(cur, find_crlf(cur, end), &req->request_line);
+    ParseResult req_line_res = request_line_parse(cur, crlf_find(cur, end), &req->request_line);
     if (req_line_res.status != PARSE_OK) return req_line_res;
-    req_line_res = parse_crlf(req_line_res.next, end);
+    req_line_res = crlf_parse(req_line_res.next, end);
     if (req_line_res.status != PARSE_OK) return req_line_res;
     cur = req_line_res.next;
     ParseResult header_res = {0};
 
     while (1) {
         // verifying that we find a second crlf in a row
-        const ParseResult eol = parse_crlf(cur, end);
+        const ParseResult eol = crlf_parse(cur, end);
         if (eol.status == PARSE_OK) {
             cur = eol.next;
             break;
         }
 
-        header_res = parse_header_line(cur, find_crlf(cur, end), req->headers, &req->header_count);
+        header_res = header_line_parse(cur, crlf_find(cur, end), req->headers, &req->header_count);
         if (header_res.status != PARSE_OK) return header_res;
-        header_res = parse_crlf(header_res.next, end);
+        header_res = crlf_parse(header_res.next, end);
         if (header_res.status != PARSE_OK) return header_res;
         cur = header_res.next;
     }
@@ -38,10 +38,10 @@ ParseResult parse_request(const char * buf, const size_t len, HttpRequest * req)
     return header_res;
 }
 
-void show_request(const HttpRequest * req) {
+void request_show(const HttpRequest * req) {
     printf("\n");
-    show_request_line(&req->request_line);
-    show_headers(req->headers, req->header_count);
+    request_line_show(&req->request_line);
+    headers_show(req->headers, req->header_count);
     printf("\n");
     fwrite(req->body, 1, req->body_len, stdout);
 }

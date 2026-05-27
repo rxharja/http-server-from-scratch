@@ -40,7 +40,7 @@ static const char *inet_ntop2(void *addr, char *buf, const size_t size) {
     return inet_ntop(sas->ss_family, src, buf, size);
 }
 
-int get_listener_socket(const char * port, const size_t backlog) {
+int listener_socket_get(const char * port, const size_t backlog) {
     int listener = -1;     // Listening socket descriptor
     const int yes=1;  // For setsockopt() SO_REUSEADDR, below
     int rv;
@@ -119,14 +119,14 @@ static void add_to_client_set(ClientSet *client_set, const int new_fd) {
     client_set->fd_count++;
 }
 
-void del_from_client_set(ClientSet *client_set, const int i) {
+void client_set_delete(ClientSet *client_set, const int i) {
     // Copy the one from the end over this one
     client_set->poll_fd_set[i] = client_set->poll_fd_set[client_set->fd_count-1];
     client_set->fd_count--;
 }
 
 
-void add_new_client(const int listener, ClientSet *client_set) {
+void client_set_add_new(const int listener, ClientSet *client_set) {
     const struct timeval timeout = { .tv_sec = TIMEOUT, .tv_usec = 0 };
     struct sockaddr_storage remote_addr; // Client address
     socklen_t addrlen;

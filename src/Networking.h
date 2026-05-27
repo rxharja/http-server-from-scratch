@@ -15,12 +15,12 @@ typedef struct {
 }ClientSet;
 
 //Return a listening socket.
-int get_listener_socket(const char * port, size_t backlog);
+int listener_socket_get(const char * port, size_t backlog);
 
 // Remove a file descriptor at a given index from the set.
-void del_from_client_set(ClientSet *client_set, int i);
+void client_set_delete(ClientSet *client_set, int i);
 
 // Handle incoming connections.
-void add_new_client(int listener, ClientSet *client_set);
+void client_set_add_new(int listener, ClientSet *client_set);
 
 #endif //HTTPSERVER_NETWORKING_H

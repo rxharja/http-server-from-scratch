@@ -29,14 +29,14 @@ uint64_t key_hash(const char *c);
 
 int dict_insert(Dictionary* d, Key key, void* value);
 
-void print_dict(const Dictionary* d);
+void dict_show(const Dictionary* d);
 
 Dictionary* dict_init(void);
 
-void free_dict(Dictionary* d, void (*destroy)(void*));
+void dict_free(Dictionary* d, void (*destroy)(void*));
 
 void* dict_find(const Dictionary *d, Key key);
 
-void free_kvp(void* p);
+void kvp_free(void* p);
 
 #endif //HTTPSERVER_DICTIONARY_H_H

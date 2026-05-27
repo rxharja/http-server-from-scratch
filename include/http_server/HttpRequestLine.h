@@ -19,8 +19,8 @@ typedef enum {
     GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH, UNKNOWN
 } HttpMethod;
 
-HttpMethod parse_http_method(const char *s, size_t len);
-char* show_http_method(HttpMethod method);
+HttpMethod http_method_parse(const char *s, size_t len);
+char* http_method_show(HttpMethod method);
 
 typedef struct {
     HttpMethod method;
@@ -29,10 +29,10 @@ typedef struct {
     char version[VERSION_LEN * 2];
 } HttpRequestLine;
 
-ParseResult parse_method(const char * cur, const char *end, HttpRequestLine * line);
-ParseResult parse_uri(const char * cur, const char *end, HttpRequestLine * line);
-ParseResult parse_version(const char * cur, const char *end, HttpRequestLine * line);
-ParseResult parse_request_line(const char * cur, const char *end, HttpRequestLine * line);
-void show_request_line(const HttpRequestLine * line);
+ParseResult method_parse(const char * cur, const char *end, HttpRequestLine * line);
+ParseResult uri_parse(const char * cur, const char *end, HttpRequestLine * line);
+ParseResult version_parse(const char * cur, const char *end, HttpRequestLine * line);
+ParseResult request_line_parse(const char * cur, const char *end, HttpRequestLine * line);
+void request_line_show(const HttpRequestLine * line);
 
 #endif //HTTP_SERVER_FROM_SCRATCH_HTTPREQUESTLINE_H

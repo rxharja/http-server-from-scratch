@@ -32,14 +32,14 @@ typedef struct {
 } ParseResult;
 
 
-ParseStatus parse_uint(const char *s, size_t len, int base, size_t max, size_t *out);
+ParseStatus uint_parse(const char *s, size_t len, int base, size_t max, size_t *out);
 
 int digit_value(unsigned char c, int base);
 
-void set_parse_error(ParseResult *res, ParseStatus status, const char * pos);
+void parse_error_set(ParseResult *res, ParseStatus status, const char * pos);
 
-int parse_http_date(const char *s, time_t *out);
+int http_date_parse(const char *s, time_t *out);
 
-size_t format_http_date(time_t t, char *buf, size_t buf_len);
+size_t http_date_format(time_t t, char *buf, size_t buf_len);
 
 #endif //HTTPSERVER_PARSERESULT_H

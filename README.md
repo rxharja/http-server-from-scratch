@@ -16,12 +16,14 @@ tests covering request lines, headers, body decoding, and HTTP dates.
 
 ## Features
 
+- Single-threaded non-blocking I/O via `poll()`; per-connection state machine drives the request lifecycle across wake-ups
 - HTTP/1.1 keep-alive, with `Connection` negotiation
 - Static file caching with `Content-Length`, `Content-Type`, `Cache-Control`
 - Dynamic file serving with `ETag` + `Last-Modified` revalidation (304 responses)
 - Chunked `Transfer-Encoding` decoding on requests
 - `HEAD` handled distinctly from `GET`
 - 405 responses with `Allow` headers when a path is registered under a different method
+- Request smuggling defenses: rejects requests carrying both `Content-Length` and `Transfer-Encoding`, and `HEAD` requests with a body
 - No runtime dependencies; POSIX-only (`_XOPEN_SOURCE=700`)
 
 ## Quick example
@@ -129,18 +131,27 @@ The current implementation targets POSIX systems with generous memory budgets
 (the response buffer is 128 MB per connection, headers up to 8 MB). Embedded
 deployment is planned, and would require:
 
-- **Concurrency model.** Replace fork-per-connection with an event loop
-  (`select`/`poll`) or an RTOS-task-per-connection model; `fork()` is unavailable
-  on FreeRTOS / ESP-IDF.
 - **Buffer sizing.** Make every `*_MAX_*` and buffer-size macro tunable at compile
   time, and move `HttpRequest::body` out of the struct so a parsed request isn't
   a megabyte.
 - **Streaming responses.** Today `HttpResponse` holds a fully-materialized
   `body` + `body_len`; an embedded build needs a callback/pull-based body API so
-  large or generated responses don't have to fit in RAM.
+  large or generated responses don't have to fit in RAM. Streaming response
+  bodies also unblock chunked `Transfer-Encoding` on the outbound side.
+- **Allocation strategy.** Replace per-request `malloc()` with either fully
+  static buffers or a per-connection arena allocator, to avoid heap fragmentation
+  on long-running devices. The arena variant also gives consumer handlers a
+  scoped scratch space for per-request allocations.
 - **Platform abstraction.** A small `platform.h` over the socket and file I/O
   primitives, with POSIX and lwIP implementations behind it. Remove
   Linux-specific headers (e.g. `asm-generic/errno-base.h`).
-- **Allocation strategy.** Replace per-request `malloc()` with either fully
-  static buffers or a pluggable arena allocator, to avoid heap fragmentation
-  on long-running devices.
+
+Already done:
+
+- **Concurrency model.** Replaced the original fork-per-connection model with a
+  single-threaded `poll()`-based event loop. Each connection carries an explicit
+  phase enum (`CONN_READING_REQUEST → CONN_READING_BODY_* → CONN_BUILDING →
+  CONN_SENDING_RESPONSE`) and a tagged-union arm holding the per-phase scratch;
+  the dispatcher runs each connection forward until it would block, then yields
+  back to the poll loop. No `fork()`, no threads — portable to RTOS-class
+  hardware.

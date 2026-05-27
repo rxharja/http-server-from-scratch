@@ -23,8 +23,6 @@ typedef struct {
     int head_only;
 } HttpResponse;
 
-HttpResponse from_static(const HttpRequest * req, const char * buf, size_t len);
-
 ssize_t response_serialize(const HttpResponse * resp, char * buffer, size_t buffer_size, int keep_alive);
 
 #endif //HTTPSERVER_HEADER_H

@@ -37,11 +37,11 @@ typedef struct {
     size_t chunk_size;
 } ChunkResult;
 
-ParseStatus parse_content_length(const char * val, size_t * out);
+ParseStatus content_length_parse(const char * val, size_t * out);
 
-ParseStatus parse_transfer_encoding(const char * val, TransferCoding * coding);
+ParseStatus transfer_encoding_parse(const char * val, TransferCoding * coding);
 
-ChunkResult parse_chunk(const char * buf, const char * end, char * dest, size_t cap);
+ChunkResult chunk_parse(const char * buf, const char * end, char * dest, size_t cap);
 
 ChunkResult body_dechunk(const char * buf, const char * end, char * dest, size_t cap);
 

@@ -40,7 +40,7 @@ int dict_insert(Dictionary* d, const Key key, void* value) {
     return n ? 1 : -1;
 }
 
-void print_dict(const Dictionary* d) {
+void dict_show(const Dictionary* d) {
     for (size_t i = 0; i < BUCKET; i++) {
         if (d->bucket[i] != NULL) {
             for (Kvp_node_t * node = d->bucket[i]; node != NULL; node = node->next) {
@@ -62,7 +62,7 @@ Dictionary* dict_init(void) {
     return d;
 }
 
-void free_dict(Dictionary* d, void (*destroy)(void*)) {
+void dict_free(Dictionary* d, void (*destroy)(void*)) {
     if (!d) return;
 
     for (size_t i = 0; i < BUCKET; i++) {
@@ -89,7 +89,7 @@ void* dict_find(const Dictionary *d, const Key key) {
     return NULL;
 }
 
-void free_kvp(void* p) {
+void kvp_free(void* p) {
     const Kvp* kvp = (Kvp*)p;
     if (kvp->value) free(kvp->value);    // Free CachedFile (void* value)
     if (kvp->key) free((void*)kvp->key); // Free key if heap-allocated string

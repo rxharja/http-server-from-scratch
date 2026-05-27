@@ -9,7 +9,7 @@
 #include <string.h>
 
 // returns end when no crlf is found
-const char *find_crlf(const char *cur, const char *end) {
+const char *crlf_find(const char *cur, const char *end) {
     while (cur + 1 < end) {
         if (cur[0] == '\r' && cur[1] == '\n') return cur;
         cur++;
@@ -32,7 +32,7 @@ int is_colon(const unsigned char c) {
 
 
 // returns end when no colon is found
-const char *find_colon(const char *cur, const char *end) {
+const char *colon_find(const char *cur, const char *end) {
     while (cur < end) {
         if (is_colon((unsigned char)*cur)) return cur;
         cur++;
@@ -42,18 +42,18 @@ const char *find_colon(const char *cur, const char *end) {
 }
 
 // advances cur past leading SP/HTAB; returns new position.
-const char *skip_ows(const char *cur, const char *end) {
+const char *ows_skip(const char *cur, const char *end) {
     while (cur < end && is_ows((unsigned char)*cur)) cur++;
     return cur;
 }
 
-const char *trim_back_to_comma(const char *start, const char *end) {
+const char *range_trim_to_comma(const char *start, const char *end) {
     while (start < end && (unsigned char)*end != ',') end--;
     return end;
 }
 
 // backs up end before SP/HTAB; returns new end.
-const char *trim_trailing_ows(const char *start, const char *end) {
+const char *ows_trim_trailing(const char *start, const char *end) {
     while (start < end && is_ows((unsigned char)end[-1])) end--;
     return end;
 }
@@ -109,7 +109,7 @@ int ascii_ieq(const char * a, const char * b) {
     return !*a && !*b;
 }
 
-int ends_with(const char *str, const char *suffix) {
+int str_ends_with(const char *str, const char *suffix) {
     if (!str || !suffix) return 0;
 
     const size_t lenstr = strlen(str);

@@ -6,17 +6,16 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-#include <assert.h>
 #include "parser.h"
 
-static int write_header(char * write_buf, const size_t cap, const ResponseHeader * header) {
+static int response_header_write(char * write_buf, const size_t cap, const ResponseHeader * header) {
     int written = 0;
     written = snprintf(write_buf, cap, "%s: %s\r\n", header->key, header->value);
     if (written < 0 || (size_t)written >= cap) return -1;
     return written;
 }
 
-static size_t write_current_time(char * write_buf, const size_t cap) {
+static size_t response_current_time_write(char * write_buf, const size_t cap) {
     // 1. Get the current calendar time
     const time_t now = time(NULL);
     if (now == (time_t)-1) return 0;
@@ -29,8 +28,7 @@ static size_t write_current_time(char * write_buf, const size_t cap) {
     return strftime(write_buf, cap, "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", gmt_info);
 }
 
-static int write_connection(char * write_buf, const size_t cap, const int keep_alive) {
-    int written = 0;
+static int response_header_connection_write(char * write_buf, const size_t cap, const int keep_alive) {
     const char * format = keep_alive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
     return snprintf(write_buf, cap, format);
 }
@@ -46,14 +44,14 @@ ssize_t response_serialize(const HttpResponse * resp, char * buffer, const size_
     offset += written;
 
     // current time in GMT
-    const size_t time_written = write_current_time(buffer + offset, buffer_size - offset);
+    const size_t time_written = response_current_time_write(buffer + offset, buffer_size - offset);
     if (time_written == 0) return -1;
     offset += time_written;
 
     // Headers
     int saw_content_length = 0;
     for (int i = 0; i < resp->header_count; i++) {
-        written = write_header(buffer + offset, buffer_size - offset, &resp->headers[i]);
+        written = response_header_write(buffer + offset, buffer_size - offset, &resp->headers[i]);
         if (written < 0 ) return -1;
         offset += written;
         if (ascii_ieq(resp->headers[i].key, "content-length")) saw_content_length = 1;
@@ -66,7 +64,7 @@ ssize_t response_serialize(const HttpResponse * resp, char * buffer, const size_
         offset += written;
     }
 
-    written = write_connection(buffer + offset, buffer_size - offset, keep_alive);
+    written = response_header_connection_write(buffer + offset, buffer_size - offset, keep_alive);
     if (written < 0 || (size_t)written >= buffer_size - offset) return -1;
     offset += written;
 

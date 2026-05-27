@@ -97,12 +97,12 @@ typedef struct {
     } st;
 } Connection;
 
-ReadHeaderResult recv_header(int fd, HttpBuffer * req);
+ReadHeaderResult conn_recv_header(int fd, HttpBuffer * req);
 
 // invariant: result.body_received is in the set of [0, body_len]
-ReadBodyResult body_recv_cl(int fd, HttpBuffer * req, CLBodySt * st);
+ReadBodyResult conn_recv_body_cl(int fd, HttpBuffer * req, CLBodySt * st);
 
-ReadBodyResult body_recv_chunked(int fd, HttpBuffer *req_buf, HttpBuffer *dechunked, ChunkedBodySt * st);
+ReadBodyResult conn_recv_body_chunked(int fd, HttpBuffer *req_buf, HttpBuffer *dechunked, ChunkedBodySt * st);
 
 HttpResponse response_error_405(const char * const *allowed, size_t allowed_count, const HttpBuffer * allow_buf, ResponseHeader *h);
 
