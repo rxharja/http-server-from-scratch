@@ -115,43 +115,55 @@ ReadBodyResult conn_recv_body_chunked(const int fd, HttpBuffer *req_buf, HttpBuf
     assert(dechunked);
     assert(dechunked->buffer);
     assert(st);
+    assert(st->body_start + st->consumed <= req_buf->size);
 
     ReadBodyResult res = {0};
-    res.status = READ_BODY_HAS_MORE;
-
-    const char * next = req_buf->buffer + st->body_start;
 
     while (1) {
-        const ChunkResult dechunk_res = chunk_advance(
-            &st->dec,
-            next,
-            req_buf->buffer + req_buf->size - next,
-            dechunked->buffer + dechunked->size,
-            dechunked->cap - dechunked->size);
+        // drain whatever's already buffered, advancing the decoder until it asks for more
+        while (1) {
+            const char  *cur    = req_buf->buffer + st->body_start + st->consumed;
+            const size_t in_len = req_buf->size - (st->body_start + st->consumed);
 
-        switch (dechunk_res.parse_result.status) {
-            case PARSE_INCOMPLETE: break; // continue recv-ing
-            // continue recv-ing if not in terminal decoder state
-            case PARSE_OK: if (st->dec.phase == CHUNK_DONE) { res.status = READ_BODY_OK; return res; } break;
-            default: res.status = READ_BODY_BAD_DATA; return res;
+            const ChunkResult cr = chunk_advance(
+                &st->dec, cur, in_len,
+                dechunked->buffer + dechunked->size,
+                dechunked->cap - dechunked->size);
+
+            // increment consumed by the previous version of the cursor to where next has ended up
+            if (cr.parse_result.next) st->consumed += (size_t)(cr.parse_result.next - cur);
+            dechunked->size += cr.bytes_written;
+
+            if (cr.parse_result.status == PARSE_PAYLOAD_TOO_LARGE) { res.status = READ_BODY_TOO_LARGE; return res; }
+            if (cr.parse_result.status != PARSE_OK && cr.parse_result.status != PARSE_INCOMPLETE) {
+                res.status = READ_BODY_BAD_DATA;
+                return res;
+            }
+
+            if (st->dec.phase == CHUNK_DONE) {
+                res.status = READ_BODY_OK;
+                res.next_req_offset = st->body_start + st->consumed;
+                return res;
+            }
+
+            if (cr.parse_result.status == PARSE_INCOMPLETE) break;   // need more wire bytes
+            // PARSE_OK but not DONE: more might be buffered — loop and try again
         }
-        if (dechunk_res.parse_result.status == PARSE_INCOMPLETE) break;
 
-        next = dechunk_res.parse_result.next;
-        dechunked->size += dechunk_res.bytes_written;
+        // PARSE_INCOMPLETE: need to recv more. If the buffer is already full,
+        // a single header line is wider than req_buf — surface as 413.
+        if (req_buf->size >= req_buf->cap) { res.status = READ_BODY_TOO_LARGE; return res; }
 
-        if (dechunked->cap - dechunked->size <= 0) { res.status = READ_BODY_TOO_LARGE; return res; }
         const ssize_t got = recv(fd, req_buf->buffer + req_buf->size, req_buf->cap - req_buf->size, 0);
-
         if (got == 0) { res.status = READ_BODY_PEER_CLOSED; return res; }
-        if (got < 0) { // -1
-            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) res.status = READ_BODY_HAS_MORE;
-            else res.status = READ_BODY_IO_ERROR;
+        if (got < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) { res.status = READ_BODY_HAS_MORE; return res; }
+            if (errno == EINTR) continue;   // re-drain (idempotent), then retry recv
+            res.status = READ_BODY_IO_ERROR;
             return res;
         }
 
         req_buf->size += got;
-        return res;
     }
 }
 

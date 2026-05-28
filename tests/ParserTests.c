@@ -217,56 +217,100 @@ static void expect_parse_uint(const char *label, const char *input, const size_t
     }
 }
 
-// parse_chunk happy path — checks status, chunk_size, decoded data, and consumed bytes.
-// want_data may be NULL when want_size is 0 (last-chunk).
-static void expect_parse_chunk_ok(const char *label,
-                                  const char *input, const size_t input_len,
-                                  const size_t want_size, const char *want_data,
-                                  const size_t want_consumed) {
-    char dest[1024] = {0};
-    const ChunkResult res = chunk_parse(input, input + input_len, dest, sizeof(dest));
-    check(label, res.parse_result.status == PARSE_OK, "parse_chunk: not OK");
-    check(label, res.bytes_written == want_size, "parse_chunk: chunk_size mismatch");
-    if (want_size > 0 && want_data) {
-        check(label, memcmp(dest, want_data, want_size) == 0,
-              "parse_chunk: data mismatch");
+// Drive chunk_advance over `input` until it either reaches CHUNK_DONE or stops with
+// a non-OK status. Returns the final ChunkResult with `bytes_written` accumulated
+// across all calls; out_phase / out_consumed report the decoder's final state.
+static ChunkResult dechunk_drive(const char *input, const size_t input_len,
+                                 char *dest, const size_t dest_cap,
+                                 ChunkedPhase *out_phase, size_t *out_consumed) {
+    ChunkDecoder dec = {0};
+    size_t consumed = 0;
+    size_t written  = 0;
+    ChunkResult cr  = {0};
+    while (1) {
+        cr = chunk_advance(&dec,
+                           input + consumed, input_len - consumed,
+                           dest + written,   dest_cap - written);
+        if (cr.parse_result.next) {
+            consumed += (size_t)(cr.parse_result.next - (input + consumed));
+        }
+        written += cr.bytes_written;
+        if (dec.phase == CHUNK_DONE) break;
+        if (cr.parse_result.status != PARSE_OK) break;
     }
-    check(label, res.parse_result.next == input + want_consumed,
-          "parse_chunk: consumed mismatch");
+    if (out_phase)    *out_phase    = dec.phase;
+    if (out_consumed) *out_consumed = consumed;
+    cr.bytes_written = written;
+    return cr;
 }
 
-// parse_chunk error path — only inspects the status.
-static void expect_parse_chunk_err(const char *label,
-                                   const char *input, const size_t input_len,
-                                   const ParseStatus want_status) {
-    char dest[1024] = {0};
-    const ChunkResult res = chunk_parse(input, input + input_len, dest, sizeof(dest));
-    check(label, res.parse_result.status == want_status, "parse_chunk: status mismatch");
-}
-
-// body_dechunk happy path — checks status, decoded payload, and that the parser
-// consumed the entire buffer (next == input + input_len).
-// want_decoded may be NULL when want_decoded_len is 0 (empty body / trailers-only).
+// chunk_advance happy path — full-buffer feed must drive the decoder to CHUNK_DONE,
+// consume every input byte, and produce the expected decoded payload.
+// want_decoded may be NULL when want_decoded_len is 0 (empty body).
 static void expect_dechunk_ok(const char *label,
                               const char *input, const size_t input_len,
                               const char *want_decoded, const size_t want_decoded_len) {
     char dest[4096] = {0};
-    const ChunkResult res = body_dechunk(input, input + input_len, dest, sizeof(dest));
-    check(label, res.parse_result.status == PARSE_OK, "body_dechunk: not OK");
+    ChunkedPhase final_phase = CHUNK_SIZE;
+    size_t consumed = 0;
+    const ChunkResult cr = dechunk_drive(input, input_len, dest, sizeof(dest),
+                                         &final_phase, &consumed);
+    check(label, cr.parse_result.status == PARSE_OK,        "dechunk: not OK");
+    check(label, final_phase == CHUNK_DONE,                 "dechunk: phase != CHUNK_DONE");
+    check(label, consumed == input_len,                     "dechunk: did not consume all input");
+    check(label, cr.bytes_written == want_decoded_len,      "dechunk: decoded length mismatch");
     if (want_decoded_len > 0 && want_decoded) {
         check(label, memcmp(dest, want_decoded, want_decoded_len) == 0,
-              "body_dechunk: data mismatch");
+              "dechunk: decoded data mismatch");
     }
-    check(label, res.parse_result.next == input + input_len, "body_dechunk: consumed mismatch");
 }
 
-// body_dechunk error path — status only.
+// chunk_advance error path — final status only.
 static void expect_dechunk_err(const char *label,
                                const char *input, const size_t input_len,
                                const ParseStatus want_status) {
     char dest[4096] = {0};
-    const ChunkResult res = body_dechunk(input, input + input_len, dest, sizeof(dest));
-    check(label, res.parse_result.status == want_status, "body_dechunk: status mismatch");
+    ChunkedPhase final_phase = CHUNK_SIZE;
+    size_t consumed = 0;
+    const ChunkResult cr = dechunk_drive(input, input_len, dest, sizeof(dest),
+                                         &final_phase, &consumed);
+    check(label, cr.parse_result.status == want_status, "dechunk: status mismatch");
+}
+
+// Feed `input` to chunk_advance one byte at a time, growing the readable window
+// each step. Exercises the persistent decoder across artificial split boundaries —
+// the property the connection-level loop relies on across poll wake-ups.
+static void expect_dechunk_split_ok(const char *label,
+                                    const char *input, const size_t input_len,
+                                    const char *want_decoded, const size_t want_decoded_len) {
+    char dest[4096] = {0};
+    ChunkDecoder dec = {0};
+    size_t fed = 0, consumed = 0, written = 0;
+    while (fed < input_len && dec.phase != CHUNK_DONE) {
+        fed++;
+        while (1) {
+            const ChunkResult cr = chunk_advance(&dec,
+                                                 input + consumed, fed - consumed,
+                                                 dest + written,   sizeof(dest) - written);
+            if (cr.parse_result.next) {
+                consumed += (size_t)(cr.parse_result.next - (input + consumed));
+            }
+            written += cr.bytes_written;
+            if (cr.parse_result.status == PARSE_INCOMPLETE) break;
+            if (cr.parse_result.status != PARSE_OK) {
+                check(label, 0, "split dechunk: unexpected hard error");
+                return;
+            }
+            if (dec.phase == CHUNK_DONE) break;
+        }
+    }
+    check(label, dec.phase == CHUNK_DONE,            "split dechunk: phase != CHUNK_DONE");
+    check(label, consumed == input_len,              "split dechunk: did not consume all input");
+    check(label, written == want_decoded_len,        "split dechunk: decoded length mismatch");
+    if (want_decoded_len > 0 && want_decoded) {
+        check(label, memcmp(dest, want_decoded, want_decoded_len) == 0,
+              "split dechunk: decoded data mismatch");
+    }
 }
 
 int main(void) {
@@ -627,59 +671,83 @@ int main(void) {
     expect_parse_uint("PU - hex overflow",  "fffff",          5, 16, MAX_BODY_LEN, PARSE_PAYLOAD_TOO_LARGE, 0);
     expect_parse_uint("PU - dec at boundary", "1024000",      7, 10, MAX_BODY_LEN, PARSE_OK, 1024000);
 
-    // parse_chunk — single-chunk grammar: chunk-size [chunk-ext] CRLF chunk-data CRLF
-    //               OR last-chunk: 1*"0" [chunk-ext] CRLF (no data, no trailing CRLF).
+    // chunk_advance — drives the chunked-decoding state machine end-to-end.
+    // Grammar: *chunk last-chunk trailer-section CRLF
+    //   chunk          = chunk-size [chunk-ext] CRLF chunk-data CRLF
+    //   last-chunk     = 1*"0" [chunk-ext] CRLF
+    //   trailer-section= *( field-line CRLF )    (rejected — see README compliance gaps)
 
-    // Happy paths.
-    expect_parse_chunk_ok("PChunk - simple 5-byte",      "5\r\nABCDE\r\n",            10,  5, "ABCDE",  10);
-    expect_parse_chunk_ok("PChunk - single byte",        "1\r\nA\r\n",                  6,  1, "A",      6);
-    expect_parse_chunk_ok("PChunk - hex 1A=26",
-        "1A\r\n12345678901234567890123456\r\n",                                         32, 26, "12345678901234567890123456", 32);
-    expect_parse_chunk_ok("PChunk - hex lowercase 1a",
-        "1a\r\n12345678901234567890123456\r\n",                                         32, 26, "12345678901234567890123456", 32);
-    expect_parse_chunk_ok("PChunk - last-chunk",         "0\r\n",                       3,  0, NULL,     3);
-    expect_parse_chunk_ok("PChunk - last-chunk multi-0", "00\r\n",                      4,  0, NULL,     4);
-    expect_parse_chunk_ok("PChunk - chunk-ext on data",  "5;name=val\r\nABCDE\r\n",    19,  5, "ABCDE", 19);
-    expect_parse_chunk_ok("PChunk - chunk-ext on last",  "0;name=val\r\n",             12,  0, NULL,    12);
-    expect_parse_chunk_ok("PChunk - embedded CRLF data", "5\r\nA\r\nXY\r\n",           10,  5, "A\r\nXY", 10);
-
-    // Error paths.
-    expect_parse_chunk_err("PChunk - missing size CRLF",     "5",                  1, PARSE_INCOMPLETE);
-    expect_parse_chunk_err("PChunk - non-hex size",          "G\r\n",              3, PARSE_BAD_REQUEST);
-    expect_parse_chunk_err("PChunk - empty size",            "\r\n",               2, PARSE_BAD_REQUEST);
-    expect_parse_chunk_err("PChunk - ext only no size",      ";ext=v\r\n",         8, PARSE_BAD_REQUEST);
-    expect_parse_chunk_err("PChunk - data shorter",          "5\r\nABC",           6, PARSE_INCOMPLETE);
-    expect_parse_chunk_err("PChunk - missing trail CRLF",    "5\r\nABCDE",         8, PARSE_INCOMPLETE);
-    expect_parse_chunk_err("PChunk - wrong byte after data", "5\r\nABCDEXX",      10, PARSE_BAD_REQUEST);
-
-    // body_dechunk — full chunked-body grammar:
-    //   *chunk last-chunk trailer-section CRLF
-
-    // Happy paths.
+    // Happy paths (full-buffer feed).
     expect_dechunk_ok("Dechunk - empty body",
         "0\r\n\r\n",                                            5, NULL,        0);
     expect_dechunk_ok("Dechunk - single chunk",
         "5\r\nABCDE\r\n0\r\n\r\n",                             15, "ABCDE",     5);
+    expect_dechunk_ok("Dechunk - single byte chunk",
+        "1\r\nA\r\n0\r\n\r\n",                                 11, "A",         1);
     expect_dechunk_ok("Dechunk - two chunks",
         "5\r\nABCDE\r\n3\r\nXYZ\r\n0\r\n\r\n",                 23, "ABCDEXYZ",  8);
-    expect_dechunk_ok("Dechunk - one trailer",
-        "5\r\nABCDE\r\n0\r\nFoo: bar\r\n\r\n",                 25, "ABCDE",     5);
-    expect_dechunk_ok("Dechunk - multi trailers",
-        "0\r\nA: 1\r\nB: 2\r\n\r\n",                           17, NULL,        0);
+    expect_dechunk_ok("Dechunk - hex size lowercase",
+        "1a\r\n12345678901234567890123456\r\n0\r\n\r\n",       37, "12345678901234567890123456", 26);
+    expect_dechunk_ok("Dechunk - hex size uppercase",
+        "1A\r\n12345678901234567890123456\r\n0\r\n\r\n",       37, "12345678901234567890123456", 26);
+    expect_dechunk_ok("Dechunk - last-chunk multi-zero",
+        "00\r\n\r\n",                                           6, NULL,        0);
+    expect_dechunk_ok("Dechunk - chunk-ext on data",
+        "5;name=val\r\nABCDE\r\n0\r\n\r\n",                    24, "ABCDE",     5);
+    expect_dechunk_ok("Dechunk - chunk-ext on last",
+        "5\r\nABCDE\r\n0;name=val\r\n\r\n",                    24, "ABCDE",     5);
     expect_dechunk_ok("Dechunk - chunk-ext throughout",
         "5;a=b\r\nABCDE\r\n0;c=d\r\n\r\n",                     23, "ABCDE",     5);
     expect_dechunk_ok("Dechunk - embedded CRLF in data",
         "5\r\nA\r\nXY\r\n0\r\n\r\n",                           15, "A\r\nXY",   5);
 
-    // Error paths.
-    expect_dechunk_err("Dechunk - missing terminator",
-        "5\r\nABCDE\r\n0\r\n",                                 13, PARSE_INCOMPLETE);
+    // Trailer fields are not yet supported — must be rejected (README compliance gaps).
+    expect_dechunk_err("Dechunk - one trailer rejected",
+        "5\r\nABCDE\r\n0\r\nFoo: bar\r\n\r\n",                 25, PARSE_BAD_REQUEST);
+    expect_dechunk_err("Dechunk - multi trailers rejected",
+        "0\r\nA: 1\r\nB: 2\r\n\r\n",                           17, PARSE_BAD_REQUEST);
     expect_dechunk_err("Dechunk - trailer line no CRLF",
-        "0\r\nFoo: bar",                                       11, PARSE_INCOMPLETE);
+        "0\r\nFoo: bar",                                       11, PARSE_BAD_REQUEST);
+
+    // Hard-error paths (malformed grammar).
+    expect_dechunk_err("Dechunk - non-hex size first",
+        "G\r\nABC\r\n",                                         8, PARSE_BAD_REQUEST);
+    expect_dechunk_err("Dechunk - empty size",
+        "\r\n",                                                 2, PARSE_BAD_REQUEST);
+    expect_dechunk_err("Dechunk - ext only no size",
+        ";ext=v\r\n",                                           8, PARSE_BAD_REQUEST);
     expect_dechunk_err("Dechunk - non-hex size mid-body",
         "5\r\nABCDE\r\nG\r\nXYZ\r\n0\r\n\r\n",                 23, PARSE_BAD_REQUEST);
-    expect_dechunk_err("Dechunk - truncated chunk",
+    expect_dechunk_err("Dechunk - wrong byte after data",
+        "5\r\nABCDEXX",                                        10, PARSE_BAD_REQUEST);
+
+    // Incomplete-input paths (would resume cleanly given more bytes).
+    expect_dechunk_err("Dechunk - missing size CRLF",
+        "5",                                                    1, PARSE_INCOMPLETE);
+    expect_dechunk_err("Dechunk - data shorter",
         "5\r\nABC",                                             6, PARSE_INCOMPLETE);
+    expect_dechunk_err("Dechunk - missing trail CRLF after data",
+        "5\r\nABCDE",                                           8, PARSE_INCOMPLETE);
+    expect_dechunk_err("Dechunk - missing LF after CR",
+        "5\r\nABCDE\r",                                         9, PARSE_INCOMPLETE);
+    expect_dechunk_err("Dechunk - missing body terminator",
+        "5\r\nABCDE\r\n0\r\n",                                 13, PARSE_INCOMPLETE);
+
+    // Split-feed — byte-by-byte resumption across artificial poll boundaries.
+    // Verifies the persistent ChunkDecoder state survives PARSE_INCOMPLETE returns
+    // and continues from exactly where it left off when more bytes arrive.
+    expect_dechunk_split_ok("Split - empty body",
+        "0\r\n\r\n",                                            5, NULL,        0);
+    expect_dechunk_split_ok("Split - single chunk",
+        "5\r\nABCDE\r\n0\r\n\r\n",                             15, "ABCDE",     5);
+    expect_dechunk_split_ok("Split - two chunks",
+        "5\r\nABCDE\r\n3\r\nXYZ\r\n0\r\n\r\n",                 23, "ABCDEXYZ",  8);
+    expect_dechunk_split_ok("Split - hex size",
+        "1a\r\n12345678901234567890123456\r\n0\r\n\r\n",       37, "12345678901234567890123456", 26);
+    expect_dechunk_split_ok("Split - chunk-ext on data",
+        "5;name=val\r\nABCDE\r\n0\r\n\r\n",                    24, "ABCDE",     5);
+    expect_dechunk_split_ok("Split - embedded CRLF in data",
+        "5\r\nA\r\nXY\r\n0\r\n\r\n",                           15, "A\r\nXY",   5);
 
     // parse_content_length now thin-wraps parse_uint with base=10 — quick sanity tie-in.
     expect_content_length("CL via PU - small",  "100", PARSE_OK, 100);

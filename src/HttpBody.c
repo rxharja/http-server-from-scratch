@@ -11,52 +11,6 @@ ParseStatus content_length_parse(const char *val, size_t *out) {
     return uint_parse(val, strlen(val), 10, MAX_BODY_LEN, out);
 }
 
-ChunkResult chunk_parse(const char * buf, const char * end, char * dest, const size_t cap) {
-    ChunkResult res = {0};
-    const char * cur = buf;
-
-    // parse length and handle ext
-    size_t len;
-    const char * crlf = crlf_find(cur, end);
-    if (!crlf || (crlf == end && end[0] != '\r' && end[1] != '\n')) {
-        parse_error_set(&res.parse_result, PARSE_INCOMPLETE, cur);
-        return res;
-    }
-    const char *size_end = memchr(cur, ';', crlf - cur);
-    if (!size_end) size_end = crlf;
-    res.parse_result.status = uint_parse(cur, size_end - cur, 16, MAX_BODY_LEN, &len);
-    if (res.parse_result.status != PARSE_OK) return res;
-
-    cur = crlf + 2; //advance past crlf
-    if (len == 0) {
-        res.parse_result.status = PARSE_OK;
-        res.parse_result.next = cur;
-        res.bytes_written = 0;
-        return res;
-    }
-
-    // parse content
-    if (cur + len + 2 > end) {
-        parse_error_set(&res.parse_result, PARSE_INCOMPLETE, cur);
-        return res;
-    }
-    if (cur[len] != '\r' || cur[len + 1] != '\n' ) {
-        parse_error_set(&res.parse_result, PARSE_BAD_REQUEST, cur);
-        return res;
-    }
-
-    if (len >= cap) {
-        parse_error_set(&res.parse_result, PARSE_PAYLOAD_TOO_LARGE, cur);
-        return res;
-    }
-
-    memcpy(dest, cur, len);
-    res.parse_result.status = PARSE_OK;
-    if (cur + len + 2 <= end) res.parse_result.next = cur + len + 2;
-    res.bytes_written = len;
-    return res;
-}
-
 ChunkResult chunk_advance(ChunkDecoder * dec, const char * in, const size_t in_len, char * out, const size_t out_avail) {
     assert(dec);
     assert(in);
@@ -81,7 +35,6 @@ ChunkResult chunk_advance(ChunkDecoder * dec, const char * in, const size_t in_l
 
             // exts are denoted with a semicolon after the size
             const char *size_end = memchr(cur, ';', crlf - cur);
-
 
             // if we don't have the ext, we null-coalesce to where we found the crlf.
             if (!size_end) size_end = crlf;
@@ -144,7 +97,7 @@ ChunkResult chunk_advance(ChunkDecoder * dec, const char * in, const size_t in_l
         }
         case CHUNK_TRAILER: { // trailers currently are not supported, current implementation is to reject
             // empty trailer only: expect bare CRLF
-            if (in_len < 2) { parse_error_set(&res.parse_result, PARSE_BAD_REQUEST, cur); return res; }
+            if (in_len < 2) { parse_error_set(&res.parse_result, PARSE_INCOMPLETE, cur); return res; }
 
             // explicit rejection of trailer fields
             if (cur[0] != '\r' || cur[1] != '\n') {
@@ -166,42 +119,6 @@ ChunkResult chunk_advance(ChunkDecoder * dec, const char * in, const size_t in_l
     }
 
     return res;
-}
-
-ChunkResult body_dechunk(const char * buf, const char * end, char * dest, const size_t cap) {
-    const char * cur = buf;
-    size_t total = 0;
-    ChunkResult c = {0};
-    while (1) {
-        const size_t remaining = cap > total ? cap - total : 0;
-        c = chunk_parse(cur, end, dest + total, remaining);
-        total += c.bytes_written;
-        if (c.parse_result.status != PARSE_OK) {
-            c.bytes_written = total; // accumulate it here
-            return c;
-        }
-        cur = c.parse_result.next;
-        if (c.bytes_written == 0) break;
-    }
-
-    while (1) {
-        if (cur + 2 > end) {
-            c.bytes_written = total;
-            parse_error_set(&c.parse_result, PARSE_INCOMPLETE, cur);
-            return c;
-        }
-
-        if (cur[0] == '\r' && cur[1] == '\n') { cur += 2; break; }   // body terminator
-        const char *crlf = crlf_find(cur, end);
-        if (!crlf) {
-            c.bytes_written = total;
-            parse_error_set(&c.parse_result, PARSE_INCOMPLETE, cur);
-            return c;
-        }
-        cur = crlf + 2;
-    }
-
-    return (ChunkResult){ (ParseResult){.next = cur, .status = PARSE_OK }, .bytes_written = total };
 }
 
 // Case-insensitive equality of bytes [start, start+len) against the literal "chunked".
