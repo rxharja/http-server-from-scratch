@@ -73,6 +73,7 @@ typedef struct {
 
 typedef struct {
     size_t       body_start;
+    size_t       consumed;   // bytes already fed to dec, relative to body_start
     ChunkDecoder dec;
 } ChunkedBodySt;
 

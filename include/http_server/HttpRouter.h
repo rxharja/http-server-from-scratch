@@ -69,26 +69,91 @@ typedef struct {
     ContentCache * dynamic_cache; // re-stats files on every hit.
 } Router;
 
+/**
+ * Look up `path` across `routes`. On exact (method,path) hit, `route` is set.
+ * On path-only hit (wrong method), `route` is NULL and `allowed[]` lists the
+ * methods registered for that path so the caller can emit a 405 + Allow.
+ *
+ * @param routes  route table
+ * @param count   number of entries in `routes`
+ * @param method  request method as a NUL-terminated string ("GET", "POST", ...)
+ * @param path    request path (NUL-terminated, query stripped)
+ * @return        lookup result; see RouteLookupResult docs
+ */
 RouteLookupResult route_lookup(const Route routes[], size_t count, const char *method, const char *path);
 
+/**
+ * @return  freshly-allocated content cache; caller frees with content_cache_free()
+ */
 ContentCache * content_cache_create();
 
+/**
+ * Walk `dir_path` and cache every regular file under `url_prefix`. Cached files
+ * are served statically without re-stat.
+ *
+ * @param cache       destination cache
+ * @param dir_path    filesystem directory to walk
+ * @param url_prefix  URL prefix prepended to each cached path; may be NULL for "/"
+ * @return            0 on success, non-zero on I/O error
+ */
 int static_dir_cache(ContentCache * cache, const char * dir_path, const char * url_prefix);
 
+/**
+ * @param cache     destination cache
+ * @param url_path  URL key (NUL-terminated)
+ * @param file      cached entry; ownership transfers to the cache
+ * @return          0 on success, non-zero on allocation failure
+ */
 int cache_file(ContentCache * cache, const char * url_path, CachedFile * file);
 
+/**
+ * @param cache  cache to free; safe to pass NULL
+ */
 void content_cache_free(ContentCache * cache);
 
+/**
+ * @param path  filesystem or URL path
+ * @return      static MIME type string inferred from extension; defaults to "application/octet-stream"
+ */
 char* content_type_get(const char * path);
 
+/**
+ * Build a 200 response from a pre-cached static file.
+ *
+ * @param req   originating request (used for HEAD detection / validators)
+ * @param file  cached file entry
+ */
 HttpResponse response_cached(const HttpRequest * req, const CachedFile * file);
 
+/**
+ * Re-stats the backing file and returns DYN_NOT_REGISTERED / DYN_GONE /
+ * DYN_NOT_MODIFIED / DYN_HIT. On DYN_HIT the cache entry holds the current body.
+ *
+ * @param cache     dynamic cache
+ * @param req       originating request (used for If-None-Match / If-Modified-Since)
+ * @param url_path  URL key
+ */
 DynamicLookupResult cache_dynamic_lookup(ContentCache *cache, const HttpRequest *req, const char *url_path);
 
+/**
+ * @param f  cache entry the client's validators matched
+ * @return   304 Not Modified response (headers only)
+ */
 HttpResponse response_dynamic_304(const DynamicCachedFile *f);
 
+/**
+ * @param f  cache entry to serve
+ * @return   200 response with body + ETag + Last-Modified
+ */
 HttpResponse response_dynamic(const DynamicCachedFile *f);
 
+/**
+ * Sanity check used at startup: flags accidental (method,path) duplicates in the
+ * route table.
+ *
+ * @param router  router to scan
+ * @return        non-zero if a duplicate is present, 0 otherwise
+ */
 int router_has_duplicate_routes(const Router * router);
 
 #endif //HTTPSERVER_HTTPROUTER_H

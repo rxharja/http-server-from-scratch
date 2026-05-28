@@ -38,11 +38,23 @@ typedef struct {
     size_t bytes_written;
 } ChunkResult;
 
+/**
+ * Parse a Content-Length header value (base-10, capped at MAX_BODY_LEN).
+ *
+ * @param val  NUL-terminated header value (OWS-stripped by the header parser)
+ * @param out  parsed length on PARSE_OK
+ */
 ParseStatus content_length_parse(const char * val, size_t * out);
 
+/**
+ * Parse a Transfer-Encoding header value. Two-pass: classifies every coding in
+ * the list, then decides. See HttpBody.c for the matrix of OK / NOT_IMPLEMENTED
+ * / BAD_REQUEST outcomes (chunked-position, duplicate-chunked, etc.).
+ *
+ * @param val     NUL-terminated header value (OWS-stripped by the header parser)
+ * @param coding  resolved coding: TE_NONE / TE_CHUNKED / TE_UNSUPPORTED
+ */
 ParseStatus transfer_encoding_parse(const char * val, TransferCoding * coding);
-
-ChunkResult chunk_parse(const char * buf, const char * end, char * dest, size_t cap);
 
 /**
  * @param dec       Chunk Decoder containing the current phase and remaining bytes
@@ -52,7 +64,5 @@ ChunkResult chunk_parse(const char * buf, const char * end, char * dest, size_t 
  * @param out_avail number of bytes writable starting at `out`
  */
 ChunkResult chunk_advance(ChunkDecoder * dec, const char * in, size_t in_len, char * out, size_t out_avail);
-
-ChunkResult body_dechunk(const char * buf, const char * end, char * dest, size_t cap);
 
 #endif //HTTPSERVER_HTTPBODY_H
