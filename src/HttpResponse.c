@@ -3,9 +3,13 @@
 //
 
 #include "http_server/HttpResponse.h"
+#include <assert.h>
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <asm-generic/errno-base.h>
+#include <sys/socket.h>
 #include "parser.h"
 
 static int response_header_write(char * write_buf, const size_t cap, const ResponseHeader * header) {
@@ -80,4 +84,82 @@ ssize_t response_serialize(const HttpResponse * resp, char * buffer, const size_
     }
 
     return offset; // total bytes written
+}
+
+SendReponseStatus response_send(const int fd, const HttpBuffer * resp, SendSt * st) {
+    assert(resp);
+    assert(resp->buffer);
+    assert(st);
+    assert(fd >= 0);
+    assert(st->sent < resp->size);
+
+    SendReponseStatus res = SEND_HAS_MORE;
+
+    // MSG_NOSIGNAL handles SIGPIPE killing the process when the peer has closed.
+    const ssize_t sent = send(fd, resp->buffer + st->sent, resp->size - st->sent, MSG_NOSIGNAL);
+
+    if (sent < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return res;
+        if (errno == EPIPE || errno == ECONNRESET) res = SEND_PEER_CLOSED;
+        else res = SEND_ERROR;
+        return res;
+    }
+
+    st->sent += sent;
+
+    if (st->sent == resp->size) res = SEND_OK;
+
+    return res;
+}
+
+HttpResponse response_error_from_status(const ParseStatus s) {
+    static const HttpResponse r400 = { .status = 400, .reason = "Bad Request",
+                                       .body = "Bad Request", .body_len = 11 };
+    static const HttpResponse r413 = { .status = 413, .reason = "Payload Too Large",
+                                       .body = "Payload too large", .body_len = 17 };
+    static const HttpResponse r414 = { .status = 414, .reason = "URI Too Long",
+                                       .body = "URI Too Long", .body_len = 12 };
+    static const HttpResponse r431 = { .status = 431, .reason = "Request Header Fields Too Large",
+                                       .body = "Request Header Fields Too Large", .body_len = 31 };
+    static const HttpResponse r500 = { .status = 500, .reason = "Internal Server Error",
+                                       .body = "Internal Server Error", .body_len = 21 };
+    static const HttpResponse r501 = { .status = 501, .reason = "Not Implemented",
+                                       .body = "Not Implemented", .body_len = 15 };
+    static const HttpResponse r505 = { .status = 505, .reason = "HTTP Version Not Supported",
+                                       .body = "HTTP Version Not Supported", .body_len = 26 };
+    static const HttpResponse r404 = { .status = 404, .reason = "Not Found",
+                                       .body = "Not Found", .body_len = 9 };
+
+    switch (s) {
+        case PARSE_BAD_REQUEST:           return r400;
+        case PARSE_PAYLOAD_TOO_LARGE:     return r413;
+        case PARSE_URI_TOO_LONG:          return r414;
+        case PARSE_HEADER_KEY_TOO_LONG:
+        case PARSE_HEADER_VALUE_TOO_LONG:
+        case PARSE_HEADER_TOO_LONG:       return r431;
+        case PARSE_NOT_IMPLEMENTED:       return r501;
+        case PARSE_VERSION_NOT_SUPPORTED: return r505;
+        case PARSE_NOT_FOUND:             return r404;
+        default:                          return r500;
+    }
+}
+
+HttpResponse response_error_405(const char * const *allowed, const size_t allowed_count, const HttpBuffer * allow_buf, ResponseHeader *h) {
+    for (size_t i = 0; i < allowed_count; i++) {
+        if (i > 0) strncat(allow_buf->buffer, ", ", allow_buf->cap - strlen(allow_buf->buffer) - 1);
+        strncat(allow_buf->buffer, allowed[i], allow_buf->cap - strlen(allow_buf->buffer) - 1);
+    }
+    h->key = "Allow";
+    h->value = allow_buf->buffer;
+    return (HttpResponse) {
+        .status = 405,                .reason = "Method Not Allowed",
+        .body = "Method Not Allowed", .body_len = 18,
+        .headers = h,                 .header_count = 1
+    };
+}
+
+void response_error_serialize(HttpBuffer * resp, const ParseStatus s) {
+    const HttpResponse res = response_error_from_status(s);
+    // error responses generally close, so keep-alive is set to 0
+    resp->size = response_serialize(&res, resp->buffer, resp->cap, 0);
 }
