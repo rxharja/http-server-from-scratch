@@ -10,11 +10,11 @@
 
 /*
  * Known HTTP/1.1 compliance gaps:
- *   - Expect: 100-continue not handled; clients may stall before sending large bodies
  *   - Chunked Transfer-Encoding only supported in requests, not responses
  *   - Absolute-form request targets (GET http://host/path) not parsed; affects proxy use
  *   - Chunked trailer fields not supported (RFC 9112 §7.1.2)
  */
+
 /**
  * @param str  candidate port string (NUL-terminated)
  * @return     0 if `str` is a valid TCP port, non-zero otherwise

@@ -6,7 +6,6 @@
 
 #include <assert.h>
 #include <errno.h>
-#include <stdlib.h>
 #include <string.h>
 #include <asm-generic/errno-base.h>
 #include <sys/socket.h>
@@ -63,7 +62,7 @@ ReadHeaderResult conn_recv_header(const int fd, HttpBuffer * req) {
     return res;
 }
 
-ReadBodyResult conn_recv_body_cl(const int fd, HttpBuffer * req, CLBodySt * st) {
+ReadBodyResult conn_recv_body_cl(const int fd, HttpBuffer * req, const size_t body_start, const size_t body_len, CLBodySt * st) {
     assert(req);
     assert(req->buffer);
     assert(st);
@@ -74,11 +73,11 @@ ReadBodyResult conn_recv_body_cl(const int fd, HttpBuffer * req, CLBodySt * st) 
 
     while (1) {
         // body length is not the size of the buffer but the length provided by the header "Content-Length"
-        if (st->received >= st->body_len) {
+        if (st->received >= body_len) {
             res.status = READ_BODY_OK;
 
             // reading past body_len means we're reading into the start of the next request
-            if (st->received > st->body_len) res.next_req_offset = st->body_start + st->body_len;
+            if (st->received > body_len) res.next_req_offset = body_start + body_len;
             break;
         }
 
@@ -108,22 +107,22 @@ ReadBodyResult conn_recv_body_cl(const int fd, HttpBuffer * req, CLBodySt * st) 
     return res;
 }
 
-ReadBodyResult conn_recv_body_chunked(const int fd, HttpBuffer *req_buf, HttpBuffer *dechunked, ChunkedBodySt * st) {
+ReadBodyResult conn_recv_body_chunked(const int fd, HttpBuffer *req_buf, const size_t body_start, HttpBuffer *dechunked, ChunkedBodySt * st) {
     assert(fd > 0);
     assert(req_buf);
     assert(req_buf->buffer);
     assert(dechunked);
     assert(dechunked->buffer);
     assert(st);
-    assert(st->body_start + st->consumed <= req_buf->size);
+    assert(body_start + st->consumed <= req_buf->size);
 
     ReadBodyResult res = {0};
 
     while (1) {
         // drain whatever's already buffered, advancing the decoder until it asks for more
         while (1) {
-            const char  *cur    = req_buf->buffer + st->body_start + st->consumed;
-            const size_t in_len = req_buf->size - (st->body_start + st->consumed);
+            const char  *cur    = req_buf->buffer + body_start + st->consumed;
+            const size_t in_len = req_buf->size - (body_start + st->consumed);
 
             const ChunkResult cr = chunk_advance(
                 &st->dec, cur, in_len,
@@ -143,7 +142,7 @@ ReadBodyResult conn_recv_body_chunked(const int fd, HttpBuffer *req_buf, HttpBuf
 
             if (st->dec.phase == CHUNK_DONE) {
                 res.status = READ_BODY_OK;
-                res.next_req_offset = st->body_start + st->consumed;
+                res.next_req_offset = body_start + st->consumed;
                 return res;
             }
 
@@ -251,6 +250,34 @@ static ConnPhase phase_send_begin(Connection *conn) {
     return CONN_SENDING_RESPONSE;
 }
 
+static ConnPhase phase_send_100_begin(Connection *conn) {
+    conn->st.send = (SendSt){ .sent = 0 };
+    return CONN_SENDING_100;
+}
+
+static ConnPhase phase_body_dispatch(Connection * conn) {
+    // body that is Chunked
+    if (conn->body_coding == TE_CHUNKED) {
+        conn->st.chunked = (ChunkedBodySt) { .dec = {0}, };
+        conn->body_dechunked.size = 0;
+        return CONN_READING_BODY_CHUNKED;
+    }
+
+    // request without a body
+    if (conn->body_len == 0) {
+        conn->req_parsed.body_len = 0;
+        return CONN_BUILDING;
+    }
+
+    // body with content-length
+    assert(conn->body_len > 0);
+    assert((size_t)conn->body_start <= conn->req_buf.size);
+
+    conn->st.cl = (CLBodySt) { .received = conn->req_buf.size - conn->body_start };
+
+    return CONN_READING_BODY_CL;
+}
+
 static ConnPhase step_header_read(Connection * conn) {
     assert(conn);
     assert(conn->phase == CONN_READING_REQUEST);
@@ -273,7 +300,12 @@ static ConnPhase step_header_read(Connection * conn) {
     assert(header_res.body_start >= 0);
     assert(header_res.total_received >= header_res.body_start);
 
-    if (!ascii_ieq(conn->req_parsed.request_line.version, "http/1.0")) {
+    conn->body_start = header_res.body_start;
+
+    const int is_http_1_0 = ascii_ieq(conn->req_parsed.request_line.version, "http/1.0");
+
+    if (!is_http_1_0) {
+        // host required after HTTP/1.0
         if (!header_find(conn->req_parsed.headers, conn->req_parsed.header_count, "host")) {
             response_error_serialize(&conn->resp_buf, PARSE_BAD_REQUEST);
             return phase_send_begin(conn);
@@ -284,15 +316,15 @@ static ConnPhase step_header_read(Connection * conn) {
         if (!ka_header || ascii_ieq("keep-alive", ka_header->value)) conn->keep_alive = 1;
     }
 
-    TransferCoding coding = TE_NONE;
+    conn->body_coding = TE_NONE;
     ParseStatus te_status = PARSE_OK;
     for (int i = 0; i < conn->req_parsed.header_count; i++) {
-        if (coding == TE_UNSUPPORTED || te_status != PARSE_OK) break;
+        if (conn->body_coding == TE_UNSUPPORTED || te_status != PARSE_OK) break;
         if (!ascii_ieq(conn->req_parsed.headers[i].key, "transfer-encoding")) continue;
-        te_status = transfer_encoding_parse(conn->req_parsed.headers[i].value, &coding);
+        te_status = transfer_encoding_parse(conn->req_parsed.headers[i].value, &conn->body_coding);
     }
 
-    if (coding == TE_UNSUPPORTED) {
+    if (conn->body_coding == TE_UNSUPPORTED) {
         response_error_serialize(&conn->resp_buf, PARSE_NOT_IMPLEMENTED);
         return phase_send_begin(conn);
     }
@@ -302,62 +334,78 @@ static ConnPhase step_header_read(Connection * conn) {
         return phase_send_begin(conn);
     }
 
-    const Header *ct_len_h = header_find(conn->req_parsed.headers, conn->req_parsed.header_count, "content-length");
-
-    // prevent smuggling by returning 400
-    if (ct_len_h && coding == TE_CHUNKED) {
+    // // RFC 6.1, chunked is HTTP/1.1+ only
+    if (is_http_1_0 && conn->body_coding == TE_CHUNKED) {
         response_error_serialize(&conn->resp_buf, PARSE_BAD_REQUEST);
         return phase_send_begin(conn);
     }
 
-    size_t body_len = 0;
+    const Header *ct_len_h = header_find(conn->req_parsed.headers, conn->req_parsed.header_count, "content-length");
+
+    // prevent smuggling by returning 400
+    if (ct_len_h && conn->body_coding == TE_CHUNKED) {
+        response_error_serialize(&conn->resp_buf, PARSE_BAD_REQUEST);
+        return phase_send_begin(conn);
+    }
+
     if (ct_len_h) {
-        const ParseStatus ps = uint_parse(ct_len_h->value, strlen(ct_len_h->value), 10, MAX_BODY_LEN, &body_len);
+        const ParseStatus ps = uint_parse(ct_len_h->value, strlen(ct_len_h->value), 10, MAX_BODY_LEN, &conn->body_len);
         if (ps != PARSE_OK) {
             response_error_serialize(&conn->resp_buf, ps);
             return phase_send_begin(conn);
         }
     }
 
-    const int has_body = coding == TE_CHUNKED || (ct_len_h && body_len > 0);
+    const int has_body = conn->body_coding == TE_CHUNKED        // Transfer-Encoding: chunked
+                      || (ct_len_h && conn->body_len > 0);      // Content-Length: N
+
+    const int body_buffered = conn->req_buf.size > conn->body_start; // body already buffered
+
+    // Per RFC: clients MUST NOT send content with HEAD.
     if (conn->req_parsed.request_line.method == HEAD && has_body) {
-        // Per RFC: clients MUST NOT send content with HEAD.
         response_error_serialize(&conn->resp_buf, PARSE_BAD_REQUEST);
         return phase_send_begin(conn);
     }
 
-    // dispatch
-    if (coding == TE_CHUNKED) {
-        conn->st.chunked = (ChunkedBodySt) {
-            .body_start = header_res.body_start,
-            .dec = {0},
-        };
-        conn->body_dechunked.size = 0;
-        return CONN_READING_BODY_CHUNKED;
+    // expect should only matter for clients greater than HTTP/1.0
+    if (is_http_1_0) return phase_body_dispatch(conn);
+
+    const Header * expect = header_find(conn->req_parsed.headers, conn->req_parsed.header_count, "expect");
+
+    // if we don't have a body, or it's buffered, or we don't find the expect header, or the header isn't 100-continue
+    if (!has_body || body_buffered || !expect || !ascii_ieq("100-continue", expect->value)) {
+        return phase_body_dispatch(conn);
     }
 
-    if (!ct_len_h || body_len == 0) {
-        conn->req_parsed.body_len = 0;
-        return CONN_BUILDING;
-    }
+    return phase_send_100_begin(conn);
+}
 
-    assert(body_len > 0);
-    assert((size_t)header_res.body_start <= conn->req_buf.size);
+#define CONTINUE_100_BYTES "HTTP/1.1 100 Continue\r\n\r\n"
 
-    conn->st.cl = (CLBodySt) {
-        .body_len   = body_len,
-        .received   = header_res.total_received - header_res.body_start,
-        .body_start = header_res.body_start,
+static ConnPhase step_send_100(Connection * conn) {
+    static const char continue_100[] = CONTINUE_100_BYTES;
+
+    static HttpBuffer continue_100_buf = {
+        .buffer = (char*)continue_100, .size = sizeof(continue_100) - 1, .cap = sizeof(continue_100) - 1,
     };
 
-    return CONN_READING_BODY_CL;
+    const SendReponseStatus status = response_send(conn->fd, &continue_100_buf, &conn->st.send);
+
+    switch (status) {
+        case SEND_HAS_MORE: return CONN_SENDING_100;
+        case SEND_OK: return phase_body_dispatch(conn);
+        case SEND_PEER_CLOSED:
+        case SEND_ERROR:
+        default:
+            return CONN_CLOSED;
+    }
 }
 
 static ConnPhase step_body_cl_read(Connection * conn) {
     assert(conn);
     assert(conn->phase == CONN_READING_BODY_CL);
 
-    const ReadBodyResult body_res = conn_recv_body_cl(conn->fd, &conn->req_buf, &conn->st.cl);
+    const ReadBodyResult body_res = conn_recv_body_cl(conn->fd, &conn->req_buf, conn->body_start, conn->body_len, &conn->st.cl);
 
     // body_res set to this when we have read the full content length or more.
     if (body_res.status == READ_BODY_OK) {
@@ -377,7 +425,7 @@ static ConnPhase step_body_chunked_read(Connection * conn) {
     assert(conn);
     assert(conn->phase == CONN_READING_BODY_CHUNKED);
 
-    const ReadBodyResult body_res = conn_recv_body_chunked(conn->fd, &conn->req_buf, &conn->body_dechunked, &conn->st.chunked);
+    const ReadBodyResult body_res = conn_recv_body_chunked(conn->fd, &conn->req_buf, conn->body_start, &conn->body_dechunked, &conn->st.chunked);
 
     switch (body_res.status) {
         case READ_BODY_OK:
@@ -460,6 +508,9 @@ static ConnPhase step_response_send(Connection * conn) {
         conn->resp_buf.size = 0;
         memset(&conn->req_parsed, 0, sizeof(conn->req_parsed));
         conn->keep_alive = 0; // re-determined per request
+        conn->body_start = 0;
+        conn->body_len = 0;
+        conn->body_coding = TE_NONE;
         return CONN_READING_REQUEST;
     }
 }
@@ -470,6 +521,7 @@ KeepAliveStatus connection_step_process(Connection * conn, const Router * router
         prev = conn->phase;
         switch (conn->phase) {
             case CONN_READING_REQUEST:      conn->phase = step_header_read(conn);                  break;
+            case CONN_SENDING_100:          conn->phase = step_send_100(conn);                     break;
             case CONN_READING_BODY_CL:      conn->phase = step_body_cl_read(conn);                 break;
             case CONN_READING_BODY_CHUNKED: conn->phase = step_body_chunked_read(conn);            break;
             case CONN_BUILDING:             conn->phase = step_response_build(conn, router);       break;

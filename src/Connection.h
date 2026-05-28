@@ -60,19 +60,15 @@ typedef enum {
     CONN_READING_REQUEST,
     CONN_READING_BODY_CL, // content length
     CONN_READING_BODY_CHUNKED,
+    CONN_SENDING_100, // 100-continue
     CONN_BUILDING,
     CONN_SENDING_RESPONSE,
     CONN_CLOSED
 } ConnPhase;
 
-typedef struct {
-    size_t body_start;
-    size_t body_len;
-    size_t received;
-} CLBodySt;
+typedef struct { size_t received; } CLBodySt;
 
 typedef struct {
-    size_t       body_start;
     size_t       consumed;   // bytes already fed to dec, relative to body_start
     ChunkDecoder dec;
 } ChunkedBodySt;
@@ -89,6 +85,9 @@ typedef struct {
     HttpBuffer resp_buf;
     HttpBuffer body_dechunked;
     HttpRequest req_parsed;
+    size_t body_start;
+    size_t body_len;            // for Content-Length
+    TransferCoding body_coding; // for Transfer-Encoding: Chunked
     size_t next_req_offset;
     size_t requests;
     union {
@@ -101,9 +100,9 @@ typedef struct {
 ReadHeaderResult conn_recv_header(int fd, HttpBuffer * req);
 
 // invariant: result.body_received is in the set of [0, body_len]
-ReadBodyResult conn_recv_body_cl(int fd, HttpBuffer * req, CLBodySt * st);
+ReadBodyResult conn_recv_body_cl(int fd, HttpBuffer * req, size_t body_start, size_t body_len, CLBodySt * st);
 
-ReadBodyResult conn_recv_body_chunked(int fd, HttpBuffer *req_buf, HttpBuffer *dechunked, ChunkedBodySt * st);
+ReadBodyResult conn_recv_body_chunked(int fd, HttpBuffer *req_buf, size_t body_start, HttpBuffer *dechunked, ChunkedBodySt * st);
 
 HttpResponse response_error_405(const char * const *allowed, size_t allowed_count, const HttpBuffer * allow_buf, ResponseHeader *h);
 
