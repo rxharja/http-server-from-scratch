@@ -21,6 +21,7 @@ tests covering request lines, headers, body decoding, and HTTP dates.
 - Static file caching with `Content-Length`, `Content-Type`, `Cache-Control`
 - Dynamic file serving with `ETag` + `Last-Modified` revalidation (304 responses)
 - Chunked `Transfer-Encoding` decoding on requests
+- `Expect: 100-continue` handled: server emits an interim `100 Continue` before reading the body when the client asks for it and a body is actually coming; skipped when there's no body, when bytes are already buffered, or for HTTP/1.0
 - `HEAD` handled distinctly from `GET`
 - 405 responses with `Allow` headers when a path is registered under a different method
 - Request smuggling defenses: rejects requests carrying both `Content-Length` and `Transfer-Encoding`, and `HEAD` requests with a body
@@ -120,7 +121,6 @@ through the consumer's include path. The library's ABI is everything under
 
 ## Known compliance gaps
 
-- `Expect: 100-continue` not handled; clients may stall before sending large bodies
 - Chunked `Transfer-Encoding` supported on requests, not yet on responses
 - Absolute-form request targets (`GET http://host/path HTTP/1.1`) not parsed; affects proxy use
 - Chunked trailer fields not supported (RFC 9112 §7.1.2)
