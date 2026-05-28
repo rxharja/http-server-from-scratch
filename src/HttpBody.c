@@ -46,7 +46,7 @@ ChunkResult chunk_advance(ChunkDecoder * dec, const char * in, const size_t in_l
             res.parse_result.status = uint_parse(cur, size_end - cur, 16, MAX_BODY_LEN, &len);
             if (res.parse_result.status != PARSE_OK) return res;
 
-            // a 0-sized chunk is a terminating signal
+            // a 0-sized chunk is the terminating signal
             if (len == 0) {
                 dec->phase = CHUNK_TRAILER;
                 res.parse_result.status = PARSE_OK;
@@ -65,6 +65,8 @@ ChunkResult chunk_advance(ChunkDecoder * dec, const char * in, const size_t in_l
         case CHUNK_DATA: { // copy the corresponding N bytes of data in the chunk body into our out buffer
             assert(dec->remaining > 0);
 
+            // bound the amount of bytes we take by min(dec->remaining, in_len)
+            // it's possible we do not have the full input yet so remaining might be overambitious
             const size_t take = dec->remaining < in_len ? dec->remaining : in_len;
             if (take > out_avail) {
                 parse_error_set(&res.parse_result, PARSE_PAYLOAD_TOO_LARGE, cur);
@@ -72,9 +74,9 @@ ChunkResult chunk_advance(ChunkDecoder * dec, const char * in, const size_t in_l
             }
 
             memcpy(out, cur, take); // copy the bytes into out
-            dec->remaining -= take;
-            res.bytes_written += take;
-            res.parse_result.next = cur + take;
+            dec->remaining -= take; // decrement remaining  by take
+            res.bytes_written += take; // increment the bytes written
+            res.parse_result.next = cur + take; // advance the cursor
             res.parse_result.status = dec->remaining == 0 ? PARSE_OK : PARSE_INCOMPLETE;
             if (dec->remaining == 0) dec->phase = CHUNK_TRAIL_CR;
             return res;

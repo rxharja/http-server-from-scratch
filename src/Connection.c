@@ -131,6 +131,7 @@ ReadBodyResult conn_recv_body_chunked(const int fd, HttpBuffer *req_buf, HttpBuf
                 dechunked->cap - dechunked->size);
 
             // increment consumed by the previous version of the cursor to where next has ended up
+            // note this is raw bytes and not decoded bytes.
             if (cr.parse_result.next) st->consumed += (size_t)(cr.parse_result.next - cur);
             dechunked->size += cr.bytes_written;
 
