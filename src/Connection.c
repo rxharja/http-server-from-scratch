@@ -17,8 +17,6 @@
 #include "parser.h"
 #include "http_server/HttpServer.h"
 
-struct addrinfo;
-
 ReadHeaderResult conn_recv_header(const int fd, HttpBuffer * req) {
     assert(req);
     assert(req->buffer);

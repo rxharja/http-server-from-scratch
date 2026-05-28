@@ -57,7 +57,7 @@ typedef struct {
 // Per-phase scratch for a Content-Length body read.
 typedef struct { size_t received; } CLBodySt;
 
-// Per-phase scratch for a chunked-Transfer-Encoding body read.
+// Per-phase state for a chunked-Transfer-Encoding body read.
 typedef struct {
     size_t       consumed;   // bytes already fed to dec, relative to body_start
     ChunkDecoder dec;

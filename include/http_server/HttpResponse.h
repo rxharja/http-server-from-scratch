@@ -32,7 +32,7 @@ typedef enum {
     SEND_ERROR
 } SendReponseStatus;
 
-// Per-phase scratch for a response send (partial-write cursor).
+// Per-phase state for a response send (partial-write cursor).
 typedef struct { size_t sent; } SendSt;
 
 /**
