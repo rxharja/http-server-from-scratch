@@ -109,12 +109,15 @@ HttpResponse response_error_405(const char * const *allowed, size_t allowed_coun
  */
 void response_error_serialize(HttpBuffer * resp, ParseStatus s);
 
-HttpResponse response_none(int status, const char *reason);
+HttpResponse response_none(int status, const char *reason, const ResponseHeader * headers, size_t header_count);
 
-HttpResponse response_buffer(int status, const char *reason, const char *body, size_t len);
+HttpResponse response_buffer(int status, const char *reason,
+                             const char *body, size_t len,
+                             const ResponseHeader * headers, size_t header_count);
 
 HttpResponse response_stream(int status, const char *reason,
                              ssize_t (*pull)(void *ctx, char *out, size_t cap),
-                             void *ctx, void (*cleanup)(void *ctx));
+                             void *ctx, void (*cleanup)(void *ctx),
+                             const ResponseHeader * headers, size_t header_count);
 
 #endif //HTTPSERVER_HEADER_H

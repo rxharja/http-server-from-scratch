@@ -112,35 +112,28 @@ SendReponseStatus response_send(const int fd, const HttpBuffer * resp, SendSt * 
     return res;
 }
 
-HttpResponse response_error_from_status(const ParseStatus s) {
-    static const HttpResponse r400 = { .status = 400, .reason = "Bad Request",
-                                       .body = "Bad Request", .body_len = 11 };
-    static const HttpResponse r413 = { .status = 413, .reason = "Payload Too Large",
-                                       .body = "Payload too large", .body_len = 17 };
-    static const HttpResponse r414 = { .status = 414, .reason = "URI Too Long",
-                                       .body = "URI Too Long", .body_len = 12 };
-    static const HttpResponse r431 = { .status = 431, .reason = "Request Header Fields Too Large",
-                                       .body = "Request Header Fields Too Large", .body_len = 31 };
-    static const HttpResponse r500 = { .status = 500, .reason = "Internal Server Error",
-                                       .body = "Internal Server Error", .body_len = 21 };
-    static const HttpResponse r501 = { .status = 501, .reason = "Not Implemented",
-                                       .body = "Not Implemented", .body_len = 15 };
-    static const HttpResponse r505 = { .status = 505, .reason = "HTTP Version Not Supported",
-                                       .body = "HTTP Version Not Supported", .body_len = 26 };
-    static const HttpResponse r404 = { .status = 404, .reason = "Not Found",
-                                       .body = "Not Found", .body_len = 9 };
+#define R_400 "Bad Request"
+#define R_404 "Not Found"
+#define R_405 "Method Not Allowed"
+#define R_413 "Payload Too Large"
+#define R_414 "URI Too Long"
+#define R_431 "Request Header Fields Too Large"
+#define R_500 "Internal Server Error"
+#define R_501 "Not Implemented"
+#define R_505 "HTTP Version Not Supported"
 
+HttpResponse response_error_from_status(const ParseStatus s) {
     switch (s) {
-        case PARSE_BAD_REQUEST:           return r400;
-        case PARSE_PAYLOAD_TOO_LARGE:     return r413;
-        case PARSE_URI_TOO_LONG:          return r414;
+        case PARSE_BAD_REQUEST:           return response_buffer(400, R_400, R_400, sizeof R_400, NULL, 0);
+        case PARSE_PAYLOAD_TOO_LARGE:     return response_buffer(413, R_413, R_413, sizeof R_413, NULL, 0);
+        case PARSE_URI_TOO_LONG:          return response_buffer(414, R_414, R_414, sizeof R_414, NULL, 0);
         case PARSE_HEADER_KEY_TOO_LONG:
         case PARSE_HEADER_VALUE_TOO_LONG:
-        case PARSE_HEADER_TOO_LONG:       return r431;
-        case PARSE_NOT_IMPLEMENTED:       return r501;
-        case PARSE_VERSION_NOT_SUPPORTED: return r505;
-        case PARSE_NOT_FOUND:             return r404;
-        default:                          return r500;
+        case PARSE_HEADER_TOO_LONG:       return response_buffer(431, R_431, R_431, sizeof R_431, NULL, 0);
+        case PARSE_NOT_IMPLEMENTED:       return response_buffer(501, R_501, R_501, sizeof R_501, NULL, 0);
+        case PARSE_VERSION_NOT_SUPPORTED: return response_buffer(505, R_505, R_505, sizeof R_505, NULL, 0);
+        case PARSE_NOT_FOUND:             return response_buffer(404, R_404, R_404, sizeof R_404, NULL, 0);
+        default:                          return response_buffer(500, R_500, R_500, sizeof R_500, NULL, 0);
     }
 }
 
@@ -151,11 +144,7 @@ HttpResponse response_error_405(const char * const *allowed, const size_t allowe
     }
     h->key = "Allow";
     h->value = allow_buf->buffer;
-    return (HttpResponse) {
-        .status = 405,                .reason = "Method Not Allowed",
-        .body = "Method Not Allowed", .body_len = 18,
-        .headers = h,                 .header_count = 1
-    };
+    return response_buffer(405, R_405, R_405, sizeof R_405, h, 1);
 }
 
 void response_error_serialize(HttpBuffer * resp, const ParseStatus s) {
@@ -165,10 +154,24 @@ void response_error_serialize(HttpBuffer * resp, const ParseStatus s) {
     resp->size = response_serialize(&res, resp->buffer, resp->cap, 0);
 }
 
-HttpResponse response_none(const int status, const char *reason) {
-    return (HttpResponse) {
-        .status = status,
-        .reason = reason,
+HttpResponse response_none(const int status, const char *reason, const ResponseHeader *headers,
+                           const size_t header_count) {
+    return (HttpResponse){
+        .status = status, .reason = reason,
+        .headers = headers, .header_count = header_count,
         .kind = BODY_NONE,
+    };
+}
+
+HttpResponse response_buffer(const int status, const char *reason, const char *body, const size_t len,
+                             const ResponseHeader *headers, const size_t header_count) {
+    return (HttpResponse){
+        .status = status, .reason = reason,
+        .headers = headers, .header_count = header_count,
+        .kind = BODY_BUFFER, .body.body_buf = (HttpBuffer){
+            .buffer = (char *) body,
+            .size = len,
+            .cap = len,
+        }
     };
 }
