@@ -4,7 +4,9 @@
 
 #ifndef HTTPSERVER_HEADER_H
 #define HTTPSERVER_HEADER_H
-#define RESPONSE_BUFFER_SIZE (128 * 1024 * 1024)
+#define RESPONSE_BUFFER_SIZE (8 * 1024) // 8kb
+#define STREAM_CHUNK_SIZE (4 * 1024) // 4kb
+
 #include <stdio.h>
 #include "HttpRequest.h"
 #include "HttpBuffer.h"
@@ -15,14 +17,27 @@ typedef struct {
     const char *value;
 } ResponseHeader;
 
+typedef enum { BODY_NONE, BODY_BUFFER, BODY_STREAM } BodyKind;
+
+typedef struct {
+    void *ctx;
+    ssize_t (*pull)(void * ctx, char * out, size_t cap);
+    void (*cleanup)(void * ctx);
+} Stream;
+
 typedef struct {
     int status;                    // 200, 404, 500
     const char *reason;            // "OK", "Not Found", etc.
     const ResponseHeader *headers; // caller-owned, usually static
     size_t header_count;
-    const char *body;             // body bytes, may be NULL
-    size_t body_len;
+    union {
+        HttpBuffer body_buf;
+        Stream Stream;
+    } body;
+    BodyKind kind;
     int head_only;
+    // const char *body;             // body bytes, may be NULL
+    // size_t body_len;
 } HttpResponse;
 
 typedef enum {
@@ -31,6 +46,14 @@ typedef enum {
     SEND_HAS_MORE,
     SEND_ERROR
 } SendReponseStatus;
+
+typedef enum {
+    STREAM_HEADER,  // drain serialized status line + headers
+    STREAM_PULL,    // call producer, frame size\r\n...payload...\r\n into staging buf
+    STREAM_DRAIN,   // send() the framed chunk; loop back to PULL when drained
+    STREAM_TRAILER, // drain 0\r\n\r\n
+    STREAM_DONE
+} SendStreamSt;
 
 // Per-phase state for a response send (partial-write cursor).
 typedef struct { size_t sent; } SendSt;
@@ -85,5 +108,13 @@ HttpResponse response_error_405(const char * const *allowed, size_t allowed_coun
  * @param s     parse status driving the error response
  */
 void response_error_serialize(HttpBuffer * resp, ParseStatus s);
+
+HttpResponse response_none(int status, const char *reason);
+
+HttpResponse response_buffer(int status, const char *reason, const char *body, size_t len);
+
+HttpResponse response_stream(int status, const char *reason,
+                             ssize_t (*pull)(void *ctx, char *out, size_t cap),
+                             void *ctx, void (*cleanup)(void *ctx));
 
 #endif //HTTPSERVER_HEADER_H

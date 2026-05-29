@@ -160,6 +160,15 @@ HttpResponse response_error_405(const char * const *allowed, const size_t allowe
 
 void response_error_serialize(HttpBuffer * resp, const ParseStatus s) {
     const HttpResponse res = response_error_from_status(s);
+
     // error responses generally close, so keep-alive is set to 0
     resp->size = response_serialize(&res, resp->buffer, resp->cap, 0);
+}
+
+HttpResponse response_none(const int status, const char *reason) {
+    return (HttpResponse) {
+        .status = status,
+        .reason = reason,
+        .kind = BODY_NONE,
+    };
 }

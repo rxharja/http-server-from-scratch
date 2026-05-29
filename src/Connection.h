@@ -57,6 +57,7 @@ typedef struct {
         CLBodySt cl;
         ChunkedBodySt chunked;
         SendSt send;
+        SendStreamSt stream;
     } st;
 } Connection;
 
