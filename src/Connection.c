@@ -273,16 +273,16 @@ static ConnPhase step_response_build(Connection * conn, const Router * router) {
     const HttpMethod method = conn->req_parsed.request_line.method == HEAD ? GET : conn->req_parsed.request_line.method;
 
     if (method == GET) {
-        const CachedFile * sf = dict_find(router->static_cache, req->request_line.path);
+        const CachedFile * sf = dict_find(router->registry, req->request_line.path);
         if (sf) { res = response_cached(&conn->req_parsed, sf); goto build_resp; }
 
-        const DynamicLookupResult d = cache_dynamic_lookup(router->dynamic_cache, req, req->request_line.path);
+        const ContentLookupResult d = cache_dynamic_lookup(router->dynamic_cache, req, req->request_line.path);
 
         switch (d.status) {
-            case DYN_NOT_REGISTERED:                                       break;
-            case DYN_GONE:         res = response_error_from_status(PARSE_NOT_FOUND); goto build_resp;
-            case DYN_NOT_MODIFIED: res = response_dynamic_304(d.file);                 goto build_resp;
-            case DYN_HIT:          res = response_dynamic(d.file); goto build_resp;
+            case CONTENT_MISS:                                       break;
+            case CONTENT_GONE:         res = response_error_from_status(PARSE_NOT_FOUND); goto build_resp;
+            case CONTENT_NOT_MODIFIED: res = response_dynamic_304(d.entry);                 goto build_resp;
+            case CONTENT_HIT:          res = response_dynamic(d.entry); goto build_resp;
         }
     }
 

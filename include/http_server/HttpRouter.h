@@ -10,8 +10,9 @@
 #include "HttpResponse.h"
 #include "Dictionary.h"
 
-typedef HttpResponse (*handler_fn)(const HttpRequest * req);
-typedef HttpResponse (*handler_fn_with_data)(const HttpRequest * req, const void * data);
+typedef HttpResponse (*handler_fn)(const HttpRequest *req);
+
+typedef HttpResponse (*handler_fn_with_data)(const HttpRequest *req, const void *data);
 
 typedef union {
     handler_fn fn;
@@ -21,52 +22,55 @@ typedef union {
 typedef struct {
     const char *method, *path;
     const handler handler;
-    const void * data;
+    const void *data;
 } Route;
 
-typedef struct {
-    size_t len;
-    ResponseHeader headers[3];
-    char data[];
-} CachedFile;
+typedef enum {
+    SERVE_STATIC_RESIDENT,
+    SERVE_DYN_RESIDENT,
+    SERVE_DYN_STREAMED
+} ServeMode;
 
 typedef struct {
-    size_t len;
     time_t mtime;
-    off_t size;                // for stat comparison alongside mtime
-    char fs_path[256];         // source path, for revalidation re-reads
-    char etag[40];             // W/"<mtime>-<size>"
-    char last_modified[32];    // RFC 7231 IMF-fixdate
-    char len_str[24];          // backs content-length header
+    off_t size; // for stat comparison alongside mtime
+    char fs_path[256]; // source path, for revalidation re-reads
+    char etag[40]; // W/"<mtime>-<size>"
+    char last_modified[32]; // RFC 7231 IMF-fixdate
+    char len_str[24]; // backs content-length header
+} RevalMeta;
+
+typedef struct {
+    ServeMode mode;
+    size_t len;
     ResponseHeader headers[5]; // [0] content-type [1] content-length [2] ETag [3] last-modified [4] cache-control
-    char data[];               // file bytes
-} DynamicCachedFile;
+    char data[]; // file bytes, 0 length for streamed
+} ContentEntry;
 
 typedef enum {
-    DYN_NOT_REGISTERED, // url not in cache -> fall through to routes
-    DYN_GONE,           // url registered but stat() failed -> 404
-    DYN_NOT_MODIFIED,   // client's validators match -> 304
-    DYN_HIT             // serve full body and invalidate cache
-} DynamicLookupStatus;
+    CONTENT_MISS, // url not in cache -> fall through to routes
+    CONTENT_GONE, // url registered but stat() failed -> 404
+    CONTENT_NOT_MODIFIED, // client's validators match -> 304
+    CONTENT_HIT // serve full body and invalidate cache
+} ContentLookupStatus;
 
 typedef struct {
-    DynamicLookupStatus status;
-    const DynamicCachedFile * file; // valid for DYN_NOT_MODIFIED / DYN_HIT
-} DynamicLookupResult;
+    ContentLookupStatus status; // static entries can ONLY produce HIT or MISS
+    const ContentEntry *entry; // valid for NOT MODIFIED or HIT
+} ContentLookupResult;
 
 typedef struct {
-    const Route *route;        // NULL if no exact match
-    const char *allowed[8];    // methods registered for this path
-    size_t      allowed_count; // 0 → 404. >0 with route==NULL → 405.
+    const Route *route; // NULL if no exact match
+    const char *allowed[8]; // methods registered for this path
+    size_t allowed_count; // 0 → 404. >0 with route==NULL → 405.
 } RouteLookupResult;
 
-typedef Dictionary ContentCache;
+typedef Dictionary ContentRegistry;
 
 typedef struct {
-    const Route * routes;
+    const Route *routes;
     const size_t route_count;
-    ContentCache * static_cache; // immutable, no revalidation
-    ContentCache * dynamic_cache; // re-stats files on every hit.
+    ContentRegistry *registry; // immutable, no revalidation
 } Router;
 
 /**
@@ -85,7 +89,7 @@ RouteLookupResult route_lookup(const Route routes[], size_t count, const char *m
 /**
  * @return  freshly-allocated content cache; caller frees with content_cache_free()
  */
-ContentCache * content_cache_create();
+ContentRegistry *content_registry_create();
 
 /**
  * Walk `dir_path` and cache every regular file under `url_prefix`. Cached files
@@ -96,7 +100,7 @@ ContentCache * content_cache_create();
  * @param url_prefix  URL prefix prepended to each cached path; may be NULL for "/"
  * @return            0 on success, non-zero on I/O error
  */
-int static_dir_cache(ContentCache * cache, const char * dir_path, const char * url_prefix);
+int static_dir_cache(ContentRegistry *cache, const char *dir_path, const char *url_prefix);
 
 /**
  * @param cache     destination cache
@@ -104,18 +108,18 @@ int static_dir_cache(ContentCache * cache, const char * dir_path, const char * u
  * @param file      cached entry; ownership transfers to the cache
  * @return          0 on success, non-zero on allocation failure
  */
-int cache_file(ContentCache * cache, const char * url_path, CachedFile * file);
+int cache_file(ContentRegistry *cache, const char *url_path, CachedFile *file);
 
 /**
  * @param cache  cache to free; safe to pass NULL
  */
-void content_cache_free(ContentCache * cache);
+void content_registry_free(ContentRegistry *cache);
 
 /**
  * @param path  filesystem or URL path
  * @return      static MIME type string inferred from extension; defaults to "application/octet-stream"
  */
-char* content_type_get(const char * path);
+char *content_registry_lookup(const char *path);
 
 /**
  * Build a 200 response from a pre-cached static file.
@@ -123,7 +127,7 @@ char* content_type_get(const char * path);
  * @param req   originating request (used for HEAD detection / validators)
  * @param file  cached file entry
  */
-HttpResponse response_cached(const HttpRequest * req, const CachedFile * file);
+HttpResponse response_cached(const HttpRequest *req, const CachedFile *file);
 
 /**
  * Re-stats the backing file and returns DYN_NOT_REGISTERED / DYN_GONE /
@@ -133,7 +137,7 @@ HttpResponse response_cached(const HttpRequest * req, const CachedFile * file);
  * @param req       originating request (used for If-None-Match / If-Modified-Since)
  * @param url_path  URL key
  */
-DynamicLookupResult cache_dynamic_lookup(ContentCache *cache, const HttpRequest *req, const char *url_path);
+ContentLookupResult cache_dynamic_lookup(ContentRegistry *cache, const HttpRequest *req, const char *url_path);
 
 /**
  * @param f  cache entry the client's validators matched
@@ -154,6 +158,6 @@ HttpResponse response_dynamic(const DynamicCachedFile *f);
  * @param router  router to scan
  * @return        non-zero if a duplicate is present, 0 otherwise
  */
-int router_has_duplicate_routes(const Router * router);
+int router_has_duplicate_routes(const Router *router);
 
 #endif //HTTPSERVER_HTTPROUTER_H

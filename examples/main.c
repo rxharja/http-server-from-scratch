@@ -50,16 +50,16 @@ int main(const int argc, char *argv[]) {
     };
 
     const Router router = {
-        .static_cache = content_cache_create(),
+        .registry = content_registry_create(),
         .route_count = 2,
         .routes = routes
     };
 
-    static_dir_cache(router.static_cache, "wwwroot-wasm", NULL);
+    static_dir_cache(router.registry, "wwwroot-wasm", NULL);
 
     server_run(argv[1], &router, BACKLOG);
 
-    content_cache_free(router.static_cache);
+    content_registry_free(router.registry);
 
     return EXIT_SUCCESS;
 }
