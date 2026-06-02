@@ -12,5 +12,6 @@ void check(const char *label, int ok, const char *detail);
 // Per-file entry points, defined in their respective translation units.
 void run_request_tests(void);
 void run_body_tests(void);
+void run_response_tests(void);
 
 #endif //HTTPSERVER_TEST_HARNESS_H

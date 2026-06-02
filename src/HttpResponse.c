@@ -8,10 +8,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
 #include <asm-generic/errno-base.h>
 #include <sys/socket.h>
 #include "parser.h"
+
+#define CONNECTION_KEEP_ALIVE "Connection: keep-alive\r\n"
+#define CONNECTION_CLOSE "Connection: close\r\n"
+#define TRANSFER_ENCODING_CHUNKED "Transfer-Encoding: chunked\r\n"
 
 static int response_header_write(char * write_buf, const size_t cap, const ResponseHeader * header) {
     int written = 0;
@@ -29,12 +32,9 @@ static size_t response_current_time_write(char * write_buf, const size_t cap) {
     const struct tm *gmt_info = gmtime(&now);
 
     // 3. Format the time: %d (day), %b (abbreviated month), %Y (year), etc.
-
     return strftime(write_buf, cap, "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", gmt_info);
 }
 
-#define CONNECTION_KEEP_ALIVE "Connection: keep-alive\r\n"
-#define CONNECTION_CLOSE "Connection: close\r\n"
 static int response_header_connection_write(char *write_buf, const size_t cap, const int keep_alive) {
     const char *h = keep_alive ? CONNECTION_KEEP_ALIVE : CONNECTION_CLOSE;
     const size_t len = keep_alive ? sizeof(CONNECTION_KEEP_ALIVE) - 1 : sizeof(CONNECTION_CLOSE) - 1;
@@ -68,26 +68,54 @@ ssize_t response_serialize(const HttpResponse * resp, char * buffer, const size_
         if (ascii_ieq(resp->headers[i].key, "content-length")) saw_content_length = 1;
     }
 
-    if (!saw_content_length && resp->body.body_buf.size > 0) {
-        written = snprintf(buffer + offset, buffer_size - offset,
-            "Content-Length: %zu\r\n", resp->body.body_buf.size);
-        if (written < 0 || (size_t)written >= buffer_size - offset) return -1;
-        offset += written;
-    }
-
     written = response_header_connection_write(buffer + offset, buffer_size - offset, keep_alive);
     if (written < 0 || (size_t)written >= buffer_size - offset) return -1;
     offset += written;
 
-    // Blank line
-    if (offset + 2 >= buffer_size) return -1;
-    buffer[offset++] = '\r'; buffer[offset++] = '\n';
+    switch (resp->kind) {
+        case BODY_BUFFER: {
+            if (!saw_content_length && resp->body.body_buf.size > 0) {
+                written = snprintf(buffer + offset, buffer_size - offset,
+                    "Content-Length: %zu\r\n", resp->body.body_buf.size);
+                if (written < 0 || (size_t)written >= buffer_size - offset) return -1;
+                offset += written;
+            }
 
-    // Body
-    if (!resp->head_only && resp->body.body_buf.buffer && resp->body.body_buf.size > 0) {
-        if (offset + resp->body.body_buf.size > buffer_size) return -1;
-        memcpy(buffer + offset, resp->body.body_buf.buffer, resp->body.body_buf.size);
-        offset += resp->body.body_buf.size;
+            // Blank line
+            if (offset + 2 >= buffer_size) return -1;
+            buffer[offset++] = '\r'; buffer[offset++] = '\n';
+
+            // Body
+            if (!resp->head_only && resp->body.body_buf.buffer && resp->body.body_buf.size > 0) {
+                if (offset + resp->body.body_buf.size > buffer_size) return -1;
+                memcpy(buffer + offset, resp->body.body_buf.buffer, resp->body.body_buf.size);
+                offset += resp->body.body_buf.size;
+            }
+
+            break;
+        }
+
+        case BODY_NONE: {
+            // Blank line
+            if (offset + 2 >= buffer_size) return -1;
+            buffer[offset++] = '\r'; buffer[offset++] = '\n';
+            break;
+        }
+
+        case BODY_STREAM: {
+            const size_t len = sizeof(TRANSFER_ENCODING_CHUNKED) - 1; // omit the \0
+
+            if (offset + len > buffer_size) return -1;
+            memcpy(buffer + offset, TRANSFER_ENCODING_CHUNKED, len);
+            offset += (ssize_t)len;
+
+            // blank line
+            if (offset + 2 >= buffer_size) return -1;
+            buffer[offset++] = '\r'; buffer[offset++] = '\n';
+            break;
+        }
+
+        default: return -1;
     }
 
     return offset; // total bytes written
