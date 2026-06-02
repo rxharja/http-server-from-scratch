@@ -27,7 +27,7 @@ ReadHeaderResult conn_recv_header(const int fd, HttpBuffer * req) {
     res.total_received = (ssize_t)req->size;
 
     while (1) {
-        if (res.total_received >= req->cap) {
+        if (res.total_received >= (ssize_t)req->cap) {
             res.status = READ_HEADER_TOO_LARGE; // return 431
             break;
         }
@@ -64,12 +64,6 @@ ReadHeaderResult conn_recv_header(const int fd, HttpBuffer * req) {
 static ConnPhase phase_send_begin(Connection *conn) {
     conn->st.send = (SendSt){ .sent = 0 };
     return CONN_SENDING_RESPONSE;
-}
-
-static ConnPhase phase_send_begin_stream(Connection *conn) {
-    conn->st.stream.phase = STREAM_HEADER;
-    conn->st.stream.send = (SendSt){ .sent = 0 };
-    return CONN_SENDING_RESPONSE_STREAM;
 }
 
 static ConnPhase phase_send_100_begin(Connection *conn) {
@@ -140,7 +134,7 @@ static ConnPhase step_header_read(Connection * conn) {
 
     conn->body_coding = TE_NONE;
     ParseStatus te_status = PARSE_OK;
-    for (int i = 0; i < conn->req_parsed.header_count; i++) {
+    for (size_t i = 0; i < conn->req_parsed.header_count; i++) {
         if (conn->body_coding == TE_UNSUPPORTED || te_status != PARSE_OK) break;
         if (!ascii_ieq(conn->req_parsed.headers[i].key, "transfer-encoding")) continue;
         te_status = transfer_encoding_parse(conn->req_parsed.headers[i].value, &conn->body_coding);
@@ -322,6 +316,15 @@ build_resp: ;
     return phase_send_begin(conn);
 }
 
+static void connection_reset(Connection * conn) {
+    conn->st.send = (SendSt){0}; // ← reset for next request
+    conn->resp_buf.size = 0;
+    memset(&conn->req_parsed, 0, sizeof(conn->req_parsed));
+    conn->keep_alive = 0; // re-determined per request
+    conn->body_start = 0;
+    conn->body_len = 0;
+    conn->body_coding = TE_NONE;
+}
 
 static ConnPhase step_response_send(Connection * conn) {
     const SendReponseStatus status = response_send(conn->fd, &conn->resp_buf, &conn->st.send);
@@ -330,51 +333,117 @@ static ConnPhase step_response_send(Connection * conn) {
         case SEND_HAS_MORE:    return phase_send_begin(conn);
         case SEND_ERROR:       return CONN_CLOSED;
         case SEND_PEER_CLOSED: return CONN_CLOSED;
-    case SEND_OK:
-        conn->requests++;
-        if (!conn->keep_alive || conn->requests >= MAX_REQUESTS) return CONN_CLOSED;
-        conn->st.send = (SendSt){0}; // ← reset for next request
-        conn->resp_buf.size = 0;
-        memset(&conn->req_parsed, 0, sizeof(conn->req_parsed));
-        conn->keep_alive = 0; // re-determined per request
-        conn->body_start = 0;
-        conn->body_len = 0;
-        conn->body_coding = TE_NONE;
-        return CONN_READING_REQUEST;
+        case SEND_OK:
+            conn->requests++;
+            if (!conn->keep_alive || conn->requests >= MAX_REQUESTS) return CONN_CLOSED;
+            connection_reset(conn);
+            return CONN_READING_REQUEST;
+        default: return CONN_CLOSED;
     }
+}
+
+static void stream_release(Connection * conn) {
+    if (conn->producer.cleanup) conn->producer.cleanup(conn->producer.ctx);
+    conn->producer.cleanup = NULL;
+    conn->producer.ctx =     NULL;
+}
+
+static ConnPhase stream_abort(Connection * conn) {
+    stream_release(conn);
+    conn->st.stream.phase = STREAM_DONE;
+    return CONN_CLOSED;
+}
+
+static StreamStep stream_handle_response(Connection * conn, const SendReponseStatus status, const StreamPhase phase) {
+    switch (status) {
+        case SEND_ERROR:
+        case SEND_PEER_CLOSED: return STREAM_ABORT;
+        case SEND_HAS_MORE:    return STREAM_YIELD;
+        case SEND_OK:
+            conn->st.stream.send.sent = 0; // reset before moving onto pulling
+            conn->st.stream.phase = phase;
+            return STREAM_ADVANCE;
+    }
+    return STREAM_ABORT;
 }
 
 static ConnPhase step_response_send_stream(Connection * conn) {
-    switch (conn->st.stream.phase) {
-        case STREAM_HEADER:
-            const SendReponseStatus status = response_send(conn->fd, &conn->resp_buf, &conn->st.stream.send);
-            switch (status) {
-                case SEND_HAS_MORE:    return phase_send_begin_stream(conn);
-                case SEND_ERROR:       return CONN_CLOSED;
-                case SEND_PEER_CLOSED: return CONN_CLOSED;
-                case SEND_OK:
-                    conn->st.stream.send = (SendSt){0};
-                    conn->st.stream.phase = STREAM_PULL;
-                    break;
+    for (;;) {
+        switch (conn->st.stream.phase) {
+            case STREAM_HEADER: {
+                const SendReponseStatus status = response_send(conn->fd, &conn->resp_buf, &conn->st.stream.send);
+                const StreamPhase phase = conn->req_parsed.request_line.method == HEAD ? STREAM_DONE : STREAM_PULL;
+                switch (stream_handle_response(conn, status, phase)) {
+                    case STREAM_ABORT: return stream_abort(conn);
+                    case STREAM_YIELD: return CONN_SENDING_RESPONSE_STREAM;
+                    case STREAM_ADVANCE: continue;
+                }
+                continue;
             }
-            return CONN_SENDING_RESPONSE_STREAM;
-            break;
+            case STREAM_PULL: {
+                char read_buf[STREAM_CHUNK_SIZE];
+                const ssize_t pulled = conn->producer.pull(conn->producer.ctx, read_buf, sizeof(read_buf));
+                if (pulled < 0) return stream_abort(conn);
+                if (pulled == 0) {
+                    const ssize_t f = chunk_frame_last(conn->resp_buf.buffer, conn->resp_buf.cap);
+                    if (f < 0) return stream_abort(conn);
+                    conn->resp_buf.size = (size_t)f;
+                    conn->st.stream.send.sent = 0;
+                    conn->st.stream.phase = STREAM_TRAILER;
+                }
+                else {
+                    const ssize_t f = chunk_frame(read_buf, pulled, conn->resp_buf.buffer, conn->resp_buf.cap);
+                    if (f < 0) return stream_abort(conn);
+                    conn->resp_buf.size = (size_t)f;
+                    conn->st.stream.send.sent = 0;
+                    conn->st.stream.phase = STREAM_DRAIN;
+                }
+                continue;
+            }
+            case STREAM_DRAIN: {
+                const SendReponseStatus status = response_send(conn->fd, &conn->resp_buf, &conn->st.stream.send);
+                switch (stream_handle_response(conn, status, STREAM_PULL)) {
+                    case STREAM_ABORT: return stream_abort(conn);
+                    case STREAM_YIELD: return CONN_SENDING_RESPONSE_STREAM;
+                    case STREAM_ADVANCE: continue;
+                }
+                continue;
+            }
+            case STREAM_TRAILER: {
+                const SendReponseStatus status = response_send(conn->fd, &conn->resp_buf, &conn->st.stream.send);
+                switch (stream_handle_response(conn, status, STREAM_DONE)) {
+                    case STREAM_ABORT: return stream_abort(conn);
+                    case STREAM_YIELD: return CONN_SENDING_RESPONSE_STREAM;
+                    case STREAM_ADVANCE: continue;
+                }
+                continue;
+            }
+            case STREAM_DONE: {
+                stream_release(conn);
+                conn->requests++;
+                if (!conn->keep_alive || conn->requests >= MAX_REQUESTS) return CONN_CLOSED;
+                connection_reset(conn);
+                return CONN_READING_REQUEST;
+            }
+
+            default: return CONN_CLOSED;
+        }
     }
 }
 
-KeepAliveStatus connection_step_process(Connection * conn, const Router * router) {
+void connection_step_process(Connection * conn, const Router * router) {
     ConnPhase prev;
     do {
         prev = conn->phase;
         switch (conn->phase) {
-            case CONN_READING_REQUEST:         conn->phase = step_header_read(conn);                  break;
-            case CONN_SENDING_100:             conn->phase = step_send_100(conn);                     break;
-            case CONN_READING_BODY_CL:         conn->phase = step_body_cl_read(conn);                 break;
-            case CONN_READING_BODY_CHUNKED:    conn->phase = step_body_chunked_read(conn);            break;
-            case CONN_BUILDING:                conn->phase = step_response_build(conn, router);       break;
-            case CONN_SENDING_RESPONSE:        conn->phase = step_response_send(conn);                break;
-            case CONN_SENDING_RESPONSE_STREAM: conn->phase = step_response_send_stream(conn);         break;
-            case CONN_CLOSED:                  /* unreachable */                                      break;
+            case CONN_READING_REQUEST:         conn->phase = step_header_read(conn);            break;
+            case CONN_SENDING_100:             conn->phase = step_send_100(conn);               break;
+            case CONN_READING_BODY_CL:         conn->phase = step_body_cl_read(conn);           break;
+            case CONN_READING_BODY_CHUNKED:    conn->phase = step_body_chunked_read(conn);      break;
+            case CONN_BUILDING:                conn->phase = step_response_build(conn, router); break;
+            case CONN_SENDING_RESPONSE:        conn->phase = step_response_send(conn);          break;
+            case CONN_SENDING_RESPONSE_STREAM: conn->phase = step_response_send_stream(conn);   break;
+            case CONN_CLOSED:                  /* unreachable */                                break;
         }
     } while (conn->phase != prev && conn->phase != CONN_CLOSED);
 }

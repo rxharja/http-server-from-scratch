@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include <asm-generic/errno-base.h>
 #include <sys/socket.h>
 #include "parser.h"
@@ -32,10 +33,16 @@ static size_t response_current_time_write(char * write_buf, const size_t cap) {
     return strftime(write_buf, cap, "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", gmt_info);
 }
 
-static int response_header_connection_write(char * write_buf, const size_t cap, const int keep_alive) {
-    const char * format = keep_alive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
-    return snprintf(write_buf, cap, format);
+#define CONNECTION_KEEP_ALIVE "Connection: keep-alive\r\n"
+#define CONNECTION_CLOSE "Connection: close\r\n"
+static int response_header_connection_write(char *write_buf, const size_t cap, const int keep_alive) {
+    const char *h = keep_alive ? CONNECTION_KEEP_ALIVE : CONNECTION_CLOSE;
+    const size_t len = keep_alive ? sizeof(CONNECTION_KEEP_ALIVE) - 1 : sizeof(CONNECTION_CLOSE) - 1;
+    if (len > cap) return -1;
+    memcpy(write_buf, h, len);
+    return (int)len;
 }
+
 
 ssize_t response_serialize(const HttpResponse * resp, char * buffer, const size_t buffer_size, const int keep_alive) {
     ssize_t offset = 0;
@@ -183,7 +190,7 @@ ssize_t chunk_frame(const char * payload, const size_t len, char * out, const si
     memcpy(out + n, payload, len);
     out[n + len] = '\r';
     out[n + len + 1] = '\n';
-    return (ssize_t)n + len + 2;
+    return (ssize_t)(n + len + 2);
 }
 
 ssize_t chunk_frame_last (char * out, const size_t out_cap) {

@@ -52,6 +52,7 @@ typedef struct {
     size_t body_start;
     size_t body_len;            // for Content-Length
     TransferCoding body_coding; // for Transfer-Encoding: Chunked
+    Stream producer;
     size_t next_req_offset;
     size_t requests;
     union {
@@ -64,6 +65,6 @@ typedef struct {
 
 ReadHeaderResult conn_recv_header(int fd, HttpBuffer * req);
 
-KeepAliveStatus connection_step_process(Connection * conn, const Router * router);
+void connection_step_process(Connection * conn, const Router * router);
 
 #endif //HTTPSERVER_CONNECTION_H

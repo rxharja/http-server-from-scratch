@@ -56,10 +56,12 @@ typedef enum {
     STREAM_DRAIN,   // send() the framed chunk; loop back to PULL when drained
     STREAM_TRAILER, // drain 0\r\n\r\n
     STREAM_DONE
-} SendStreamPhase;
+} StreamPhase;
+
+typedef enum { STREAM_ABORT, STREAM_YIELD, STREAM_ADVANCE } StreamStep;
 
 typedef struct {
-    SendStreamPhase phase;
+    StreamPhase phase;
     SendSt send;
 } SendStreamSt;
 
@@ -81,7 +83,7 @@ ssize_t response_serialize(const HttpResponse * resp, char * buffer, size_t buff
  *
  * @param fd    connection file descriptor (non-blocking, MSG_NOSIGNAL-aware)
  * @param resp  fully-serialized response buffer
- * @param st    in/out per-phase scratch (sent-byte cursor)
+ * @param st    in/out per-phase state (sent-byte cursor)
  * @return      SEND_OK / SEND_HAS_MORE / SEND_PEER_CLOSED / SEND_ERROR
  */
 SendReponseStatus response_send(int fd, const HttpBuffer * resp, SendSt * st);
