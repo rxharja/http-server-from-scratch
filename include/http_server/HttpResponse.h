@@ -47,16 +47,21 @@ typedef enum {
     SEND_ERROR
 } SendReponseStatus;
 
+// Per-phase state for a response send (partial-write cursor).
+typedef struct { size_t sent; } SendSt;
+
 typedef enum {
     STREAM_HEADER,  // drain serialized status line + headers
     STREAM_PULL,    // call producer, frame size\r\n...payload...\r\n into staging buf
     STREAM_DRAIN,   // send() the framed chunk; loop back to PULL when drained
     STREAM_TRAILER, // drain 0\r\n\r\n
     STREAM_DONE
-} SendStreamSt;
+} SendStreamPhase;
 
-// Per-phase state for a response send (partial-write cursor).
-typedef struct { size_t sent; } SendSt;
+typedef struct {
+    SendStreamPhase phase;
+    SendSt send;
+} SendStreamSt;
 
 /**
  * Serialize `resp` into the wire format (status line + headers + body) at `buffer`.

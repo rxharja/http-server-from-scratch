@@ -37,6 +37,7 @@ typedef enum {
     CONN_SENDING_100, // 100-continue
     CONN_BUILDING,
     CONN_SENDING_RESPONSE,
+    CONN_SENDING_RESPONSE_STREAM,
     CONN_CLOSED
 } ConnPhase;
 

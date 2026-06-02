@@ -66,6 +66,12 @@ static ConnPhase phase_send_begin(Connection *conn) {
     return CONN_SENDING_RESPONSE;
 }
 
+static ConnPhase phase_send_begin_stream(Connection *conn) {
+    conn->st.stream.phase = STREAM_HEADER;
+    conn->st.stream.send = (SendSt){ .sent = 0 };
+    return CONN_SENDING_RESPONSE_STREAM;
+}
+
 static ConnPhase phase_send_100_begin(Connection *conn) {
     conn->st.send = (SendSt){ .sent = 0 };
     return CONN_SENDING_100;
@@ -338,18 +344,37 @@ static ConnPhase step_response_send(Connection * conn) {
     }
 }
 
+static ConnPhase step_response_send_stream(Connection * conn) {
+    switch (conn->st.stream.phase) {
+        case STREAM_HEADER:
+            const SendReponseStatus status = response_send(conn->fd, &conn->resp_buf, &conn->st.stream.send);
+            switch (status) {
+                case SEND_HAS_MORE:    return phase_send_begin_stream(conn);
+                case SEND_ERROR:       return CONN_CLOSED;
+                case SEND_PEER_CLOSED: return CONN_CLOSED;
+                case SEND_OK:
+                    conn->st.stream.send = (SendSt){0};
+                    conn->st.stream.phase = STREAM_PULL;
+                    break;
+            }
+            return CONN_SENDING_RESPONSE_STREAM;
+            break;
+    }
+}
+
 KeepAliveStatus connection_step_process(Connection * conn, const Router * router) {
     ConnPhase prev;
     do {
         prev = conn->phase;
         switch (conn->phase) {
-            case CONN_READING_REQUEST:      conn->phase = step_header_read(conn);                  break;
-            case CONN_SENDING_100:          conn->phase = step_send_100(conn);                     break;
-            case CONN_READING_BODY_CL:      conn->phase = step_body_cl_read(conn);                 break;
-            case CONN_READING_BODY_CHUNKED: conn->phase = step_body_chunked_read(conn);            break;
-            case CONN_BUILDING:             conn->phase = step_response_build(conn, router);       break;
-            case CONN_SENDING_RESPONSE:     conn->phase = step_response_send(conn);                break;
-            case CONN_CLOSED:               /* unreachable */                                      break;
+            case CONN_READING_REQUEST:         conn->phase = step_header_read(conn);                  break;
+            case CONN_SENDING_100:             conn->phase = step_send_100(conn);                     break;
+            case CONN_READING_BODY_CL:         conn->phase = step_body_cl_read(conn);                 break;
+            case CONN_READING_BODY_CHUNKED:    conn->phase = step_body_chunked_read(conn);            break;
+            case CONN_BUILDING:                conn->phase = step_response_build(conn, router);       break;
+            case CONN_SENDING_RESPONSE:        conn->phase = step_response_send(conn);                break;
+            case CONN_SENDING_RESPONSE_STREAM: conn->phase = step_response_send_stream(conn);         break;
+            case CONN_CLOSED:                  /* unreachable */                                      break;
         }
     } while (conn->phase != prev && conn->phase != CONN_CLOSED);
 }
