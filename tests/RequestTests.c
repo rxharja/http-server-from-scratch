@@ -9,7 +9,6 @@
 #include "parser.h"
 #include "test_harness.h"
 
-
 static void expect_method(const char *label, const char *input, const HttpMethod want) {
     HttpRequestLine r = {0};
     method_parse(input, input + strlen(input), &r);
@@ -34,7 +33,7 @@ static void expect_uri(const char *label, const char *input, const ParseStatus w
 static void expect_version(const char *label, const char *input, const ParseStatus want) {
     HttpRequestLine r = {0};
     // Contract: caller (parse_request_line) hands parse_version the bare
-    // version field — CRLF already stripped. Tests mirror that: end = start + len.
+    // version field: CRLF already stripped. Tests mirror that: end = start + len.
     const ParseResult res = version_parse(input, input + strlen(input), &r);
     check(label, res.status == want, "version mismatch");
 }
@@ -155,7 +154,7 @@ static void expect_get_header(const char *label, const HttpRequest *req,
         }
     }
 }
-// digit_value — single-character digit-to-int converter.
+// digit_value: single-character digit-to-int converter.
 // Returns 0..base-1 on a valid digit (case-insensitive for hex), -1 otherwise.
 static void expect_digit_value(const char *label, const unsigned char c,
                                const int base, const int want) {
@@ -163,7 +162,7 @@ static void expect_digit_value(const char *label, const unsigned char c,
     check(label, got == want, "digit_value mismatch");
 }
 
-// parse_uint — strict number parser with explicit length, base, and overflow guard.
+// parse_uint: strict number parser with explicit length, base, and overflow guard.
 // On PARSE_OK the parsed value is written to *out; otherwise we don't read it.
 static void expect_parse_uint(const char *label, const char *input, const size_t len,
                               const int base, const size_t max,
@@ -270,7 +269,7 @@ void run_request_tests(void) {
     // Embedded NUL must not short-circuit a memcmp-style check.
     expect_version_n("Version - embedded NUL",   "HTTP/\0.1", 8, PARSE_BAD_REQUEST);
 
-    // parse_request_line — bare line, no CRLF (caller strips it).
+    // parse_request_line: bare line, no CRLF (caller strips it).
     expect_request_line("ReqLine - GET / HTTP/1.1",  "GET / HTTP/1.1",                PARSE_OK);
     expect_request_line("ReqLine - POST w/ query",   "POST /api?x=1 HTTP/1.0",        PARSE_OK);
     expect_request_line("ReqLine - DELETE",          "DELETE /resource/42 HTTP/1.1",  PARSE_OK);
@@ -282,7 +281,7 @@ void run_request_tests(void) {
     expect_request_line("ReqLine - empty",           "",                              PARSE_BAD_REQUEST);
     expect_request_line("ReqLine - lowercase ver",   "GET / http/1.1",                PARSE_BAD_REQUEST);
 
-    // parse_header — full buffer including CRLF terminator(s).
+    // parse_header: full buffer including CRLF terminator(s).
     expect_status("Header - valid GET",     "GET / HTTP/1.1\r\n\r\n",                 PARSE_OK);
     expect_status("Header - valid POST",    "POST /api?x=1 HTTP/1.0\r\n\r\n",         PARSE_OK);
     expect_status("Header - bad version",   "GET / HTTP/1.10\r\n\r\n",                PARSE_BAD_REQUEST);
@@ -292,7 +291,7 @@ void run_request_tests(void) {
     expect_status("unknown method",  "FROBNICATE / HTTP/1.1\r\n\r\n",    PARSE_BAD_REQUEST);
     expect_status("empty",           "",                                 PARSE_BAD_REQUEST);
 
-    // parse_crlf — strict CRLF validator with bounds check.
+    // parse_crlf: strict CRLF validator with bounds check.
     expect_crlf("CRLF - exact",                "\r\n",     2, PARSE_OK);
     expect_crlf("CRLF - extra trailing bytes", "\r\nfoo",  5, PARSE_OK);
     expect_crlf("CRLF - lone CR (1 byte)",     "\r",       1, PARSE_BAD_REQUEST);
@@ -303,7 +302,7 @@ void run_request_tests(void) {
     expect_crlf("CRLF - reversed (LF then CR)","\n\r",     2, PARSE_BAD_REQUEST);
     expect_crlf("CRLF - no line endings at all","ab",      2, PARSE_BAD_REQUEST);
 
-    // parse_header_key — token validation, OWS-rejection (via tchar), is_colon at end.
+    // parse_header_key: token validation, OWS-rejection (via tchar), is_colon at end.
     expect_header_key("HKey - simple",          "Host:",                "Host",          PARSE_OK);
     expect_header_key("HKey - hyphenated",      "Content-Type:",        "Content-Type",  PARSE_OK);
     expect_header_key("HKey - tchar punctuation","X-Hdr_1!#$%&'*+.^`|~:", "X-Hdr_1!#$%&'*+.^`|~", PARSE_OK);
@@ -320,7 +319,7 @@ void run_request_tests(void) {
     expect_header_key("HKey - control byte",    "Ho\x01st:",            NULL,            PARSE_BAD_REQUEST);
     expect_header_key("HKey - no colon at end", "Host",                 NULL,            PARSE_BAD_REQUEST);
 
-    // parse_header_value — OWS trim, content validation, empty allowed (RFC 9110 §5.5).
+    // parse_header_value: OWS trim, content validation, empty allowed (RFC 9110 §5.5).
     expect_header_value("HVal - simple",            "example.com",         "example.com",        PARSE_OK);
     expect_header_value("HVal - empty allowed",     "",                    "",                   PARSE_OK);
     expect_header_value("HVal - leading SP",        "  example.com",       "example.com",        PARSE_OK);
@@ -344,7 +343,7 @@ void run_request_tests(void) {
     expect_header_value_n("HVal - lone LF rejected","ab\ncd",            5,     PARSE_BAD_REQUEST);
     expect_header_value_n("HVal - embedded NUL",    "ab\0cd",            5,     PARSE_BAD_REQUEST);
 
-    // Length boundaries — buffer is MAX_HEADER_VALUE_LEN = 256 (max storable: 255 + NUL).
+    // Length boundaries: buffer is MAX_HEADER_VALUE_LEN = 256 (max storable: 255 + NUL).
     {
         char val_max[256];
         memset(val_max, 'x', 255);
@@ -358,7 +357,7 @@ void run_request_tests(void) {
         expect_header_value("HVal - too long (256)", val_too_long, NULL, PARSE_HEADER_VALUE_TOO_LONG);
     }
 
-    // parse_header_line — key + colon + value end-to-end (no CRLF).
+    // parse_header_line: key + colon + value end-to-end (no CRLF).
     expect_header_line("HLine - simple",          "Host: example.com",          "Host",        "example.com",   PARSE_OK);
     expect_header_line("HLine - no SP after col", "Host:example.com",           "Host",        "example.com",   PARSE_OK);
     expect_header_line("HLine - empty value",     "X-Empty:",                   "X-Empty",     "",              PARSE_OK);
@@ -372,7 +371,7 @@ void run_request_tests(void) {
     expect_header_line("HLine - bad value byte",  "Host: bad\x01value",         NULL, NULL,                     PARSE_BAD_REQUEST);
     expect_header_line("HLine - bad key byte",    "Ho st: value",               NULL, NULL,                     PARSE_BAD_REQUEST);
 
-    // parse_header — strict CRLF + multiple headers + missing terminator cases.
+    // parse_header: strict CRLF + multiple headers + missing terminator cases.
     expect_status("Header - multi-header",                "GET / HTTP/1.1\r\nHost: x\r\nUser-Agent: t\r\n\r\n", PARSE_OK);
     expect_status("Header - no headers, just empty line", "GET / HTTP/1.1\r\n\r\n",                             PARSE_OK);
     expect_status("Header - no CRLF anywhere",            "GET / HTTP/1.1",                                     PARSE_BAD_REQUEST);
@@ -382,7 +381,7 @@ void run_request_tests(void) {
     expect_status("Header - lone LF after header",        "GET / HTTP/1.1\r\nHost: x\n\r\n",                    PARSE_BAD_REQUEST);
     expect_status_n("Header - embedded NUL in header",    "GET / HTTP/1.1\r\nHost: a\0b\r\n\r\n", 28,           PARSE_BAD_REQUEST);
 
-    // get_header — case-insensitive lookup, prefix-collision, not-found, empty array.
+    // get_header: case-insensitive lookup, prefix-collision, not-found, empty array.
     {
         const HttpRequest r = {
             .headers = {
@@ -412,7 +411,7 @@ void run_request_tests(void) {
         expect_get_header("Get - empty headers array",      &empty, "Host", NULL);
     }
 
-    // digit_value — character-to-digit conversion with base awareness.
+    // digit_value: character-to-digit conversion with base awareness.
     expect_digit_value("DV - decimal '0'",          '0', 10,  0);
     expect_digit_value("DV - decimal '5'",          '5', 10,  5);
     expect_digit_value("DV - decimal '9'",          '9', 10,  9);
@@ -431,7 +430,7 @@ void run_request_tests(void) {
     expect_digit_value("DV - hex SP rejected",      ' ', 16, -1);
     expect_digit_value("DV - hex '!' rejected",     '!', 16, -1);
 
-    // parse_uint — generalized strict integer parser.
+    // parse_uint: generalized strict integer parser.
     // Decimal happy paths.
     expect_parse_uint("PU - dec '0'",                "0",     1, 10, MAX_BODY_LEN, PARSE_OK, 0);
     expect_parse_uint("PU - dec '5'",                "5",     1, 10, MAX_BODY_LEN, PARSE_OK, 5);
@@ -449,7 +448,7 @@ void run_request_tests(void) {
     expect_parse_uint("PU - hex '1A' is 26",         "1A",  2, 16, MAX_BODY_LEN, PARSE_OK, 26);
     expect_parse_uint("PU - hex '1a' is 26",         "1a",  2, 16, MAX_BODY_LEN, PARSE_OK, 26);
 
-    // Error paths — the spec is strict; these have no interpretation.
+    // Error paths: the spec is strict; these have no interpretation.
     expect_parse_uint("PU - empty input",            "",    0, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
     expect_parse_uint("PU - hex letter in dec",      "1A",  2, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
     expect_parse_uint("PU - non-digit byte",         "5x",  2, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
@@ -461,7 +460,7 @@ void run_request_tests(void) {
     expect_parse_uint("PU - hex 'G' rejected",       "G",   1, 16, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
     expect_parse_uint("PU - decimal point",          "1.5", 3, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
 
-    // Overflow — value exceeds the cap. MAX_BODY_LEN = 1,024,000.
+    // Overflow: value exceeds the cap. MAX_BODY_LEN = 1,024,000.
     expect_parse_uint("PU - dec overflow",  "1024001",        7, 10, MAX_BODY_LEN, PARSE_PAYLOAD_TOO_LARGE, 0);
     expect_parse_uint("PU - hex overflow",  "fffff",          5, 16, MAX_BODY_LEN, PARSE_PAYLOAD_TOO_LARGE, 0);
     expect_parse_uint("PU - dec at boundary", "1024000",      7, 10, MAX_BODY_LEN, PARSE_OK, 1024000);

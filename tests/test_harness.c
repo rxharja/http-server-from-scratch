@@ -13,7 +13,7 @@ void check(const char *label, const int ok, const char *detail) {
         printf("ok   %s\n", label);
     } else {
         failed++;
-        printf("FAIL %s — %s\n", label, detail);
+        printf("FAIL %s: %s\n", label, detail);
     }
 }
 

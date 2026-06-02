@@ -70,7 +70,7 @@ static ChunkResult dechunk_drive(const char *input, const size_t input_len,
     return cr;
 }
 
-// chunk_advance happy path — full-buffer feed must drive the decoder to CHUNK_DONE,
+// chunk_advance happy path: full-buffer feed must drive the decoder to CHUNK_DONE,
 // consume every input byte, and produce the expected decoded payload.
 // want_decoded may be NULL when want_decoded_len is 0 (empty body).
 static void expect_dechunk_ok(const char *label,
@@ -91,7 +91,7 @@ static void expect_dechunk_ok(const char *label,
     }
 }
 
-// chunk_advance error path — final status only.
+// chunk_advance error path: final status only.
 static void expect_dechunk_err(const char *label,
                                const char *input, const size_t input_len,
                                const ParseStatus want_status) {
@@ -104,7 +104,7 @@ static void expect_dechunk_err(const char *label,
 }
 
 // Feed `input` to chunk_advance one byte at a time, growing the readable window
-// each step. Exercises the persistent decoder across artificial split boundaries —
+// each step. Exercises the persistent decoder across artificial split boundaries:
 // the property the connection-level loop relies on across poll wake-ups.
 static void expect_dechunk_split_ok(const char *label,
                                     const char *input, const size_t input_len,
@@ -139,7 +139,7 @@ static void expect_dechunk_split_ok(const char *label,
     }
 }
 
-// ── chunk_frame / chunk_frame_last — the encoder, mirror of chunk_advance ─────
+// ── chunk_frame / chunk_frame_last: the encoder, mirror of chunk_advance ─────
 // The framer wraps `len` raw payload bytes as `<hexsize>\r\n<payload>\r\n`. These
 // assert against the exact wire bytes (memcmp, never strcmp) so they catch the
 // two classic chunked-encoding traps:
@@ -148,7 +148,7 @@ static void expect_dechunk_split_ok(const char *label,
 //   - the payload is binary: it must be copied by length, never string-formatted.
 //     An embedded NUL would truncate a %s-based encoder mid-chunk.
 // NOTE: a zero-length data chunk *is* the terminator, so chunk_frame is never
-// called with len == 0 — that case is chunk_frame_last's job.
+// called with len == 0: that case is chunk_frame_last's job.
 
 // Frame `payload`/`len` into a generous buffer; assert the produced wire bytes
 // equal `want`/`want_len` and that the return value equals want_len.
@@ -188,7 +188,7 @@ static void expect_frame_last(const char *label) {
 }
 
 // Round-trip: frame a payload + terminator, then run the bytes back through
-// chunk_advance. Proves the encoder and decoder are inverses — the strongest
+// chunk_advance. Proves the encoder and decoder are inverses, the strongest
 // single check, and it ties the new framer to the existing decoder.
 static void expect_frame_roundtrip(const char *label,
                                    const char *payload, const size_t len) {
@@ -212,7 +212,7 @@ static void expect_frame_roundtrip(const char *label,
 }
 
 void run_body_tests(void) {
-    // parse_content_length — see helper comment for the assumed signature.
+    // parse_content_length: see helper comment for the assumed signature.
     // (You'll need to declare it in HttpRequest.h once the implementation lands.)
     expect_content_length("CL - zero",           "0",       PARSE_OK,           0);
     expect_content_length("CL - small",          "100",     PARSE_OK,           100);
@@ -227,12 +227,12 @@ void run_body_tests(void) {
     expect_content_length("CL - negative",       "-100",    PARSE_BAD_REQUEST,  0);
     expect_content_length("CL - hex prefix",     "0x10",    PARSE_BAD_REQUEST,  0);
     expect_content_length("CL - float",          "1.5",     PARSE_BAD_REQUEST,  0);
-    // size_t-overflow case — number bigger than any platform's size_t.
+    // size_t-overflow case: number bigger than any platform's size_t.
     // Should map to PARSE_PAYLOAD_TOO_LARGE (or whatever name you settle on).
     expect_content_length("CL - overflow size_t","999999999999999999999999999",
                                                             PARSE_PAYLOAD_TOO_LARGE, 0);
 
-    // parse_transfer_encoding — see helper comment for assumed signature.
+    // parse_transfer_encoding: see helper comment for assumed signature.
     // Recognition (case-insensitive per RFC 9110 §10.1.4).
     expect_transfer_encoding("TE - chunked",            "chunked",          PARSE_OK,           TE_CHUNKED);
     expect_transfer_encoding("TE - case Chunked",       "Chunked",          PARSE_OK,           TE_CHUNKED);
@@ -256,7 +256,7 @@ void run_body_tests(void) {
     expect_transfer_encoding("TE - chunked then gzip",  "chunked, gzip",    PARSE_BAD_REQUEST,  TE_NONE);
     expect_transfer_encoding("TE - chunked mid-list",   "chunked, gzip, deflate", PARSE_BAD_REQUEST, TE_NONE);
 
-    // RFC 9110 §5.6.1 — empty list elements MUST be ignored.
+    // RFC 9110 §5.6.1: empty list elements MUST be ignored.
     expect_transfer_encoding("TE - leading comma",      ",chunked",         PARSE_OK,           TE_CHUNKED);
     expect_transfer_encoding("TE - trailing comma",     "chunked,",         PARSE_OK,           TE_CHUNKED);
     expect_transfer_encoding("TE - double comma",       "chunked,,",        PARSE_OK,           TE_CHUNKED);
@@ -268,7 +268,7 @@ void run_body_tests(void) {
     expect_transfer_encoding("TE - SP before comma",    "gzip ,chunked",    PARSE_NOT_IMPLEMENTED,           TE_UNSUPPORTED);
     expect_transfer_encoding("TE - SP both sides",      "gzip , chunked",   PARSE_NOT_IMPLEMENTED,           TE_UNSUPPORTED);
 
-    // Parameters (chunked carries none in practice, but the grammar allows them — must strip).
+    // Parameters (chunked carries none in practice, but the grammar allows them, must strip).
     expect_transfer_encoding("TE - chunked w/ params",  "chunked;ext=val",  PARSE_OK,           TE_CHUNKED);
     expect_transfer_encoding("TE - chunked OWS+params", "chunked ;ext=val", PARSE_OK,           TE_CHUNKED);
     expect_transfer_encoding("TE - gzip w/ params last","gzip;q=0.5, chunked", PARSE_NOT_IMPLEMENTED, TE_UNSUPPORTED);
@@ -280,11 +280,11 @@ void run_body_tests(void) {
     expect_transfer_encoding("TE - bad token paren",    "(invalid)",        PARSE_BAD_REQUEST,  TE_NONE);
     expect_transfer_encoding("TE - bad token slash",    "weird/coding",     PARSE_BAD_REQUEST,  TE_NONE);
 
-    // chunk_advance — drives the chunked-decoding state machine end-to-end.
+    // chunk_advance: drives the chunked-decoding state machine end-to-end.
     // Grammar: *chunk last-chunk trailer-section CRLF
     //   chunk          = chunk-size [chunk-ext] CRLF chunk-data CRLF
     //   last-chunk     = 1*"0" [chunk-ext] CRLF
-    //   trailer-section= *( field-line CRLF )    (rejected — see README compliance gaps)
+    //   trailer-section= *( field-line CRLF )    (rejected, see README compliance gaps)
 
     // Happy paths (full-buffer feed).
     expect_dechunk_ok("Dechunk - empty body",
@@ -310,7 +310,7 @@ void run_body_tests(void) {
     expect_dechunk_ok("Dechunk - embedded CRLF in data",
         "5\r\nA\r\nXY\r\n0\r\n\r\n",                           15, "A\r\nXY",   5);
 
-    // Trailer fields are not yet supported — must be rejected (README compliance gaps).
+    // Trailer fields are not yet supported. Must be rejected (README compliance gaps).
     expect_dechunk_err("Dechunk - one trailer rejected",
         "5\r\nABCDE\r\n0\r\nFoo: bar\r\n\r\n",                 25, PARSE_BAD_REQUEST);
     expect_dechunk_err("Dechunk - multi trailers rejected",
@@ -342,7 +342,7 @@ void run_body_tests(void) {
     expect_dechunk_err("Dechunk - missing body terminator",
         "5\r\nABCDE\r\n0\r\n",                                 13, PARSE_INCOMPLETE);
 
-    // Split-feed — byte-by-byte resumption across artificial poll boundaries.
+    // Split-feed: byte-by-byte resumption across artificial poll boundaries.
     // Verifies the persistent ChunkDecoder state survives PARSE_INCOMPLETE returns
     // and continues from exactly where it left off when more bytes arrive.
     expect_dechunk_split_ok("Split - empty body",
@@ -358,7 +358,7 @@ void run_body_tests(void) {
     expect_dechunk_split_ok("Split - embedded CRLF in data",
         "5\r\nA\r\nXY\r\n0\r\n\r\n",                           15, "A\r\nXY",   5);
 
-    // chunk_frame — the encoder. Exact-wire assertions; the hex-size and
+    // chunk_frame: the encoder. Exact-wire assertions; the hex-size and
     // embedded-NUL cases are the ones that catch %zu/%s bugs.
     expect_frame("Frame - small chunk", "ABCDE", 5, "5\r\nABCDE\r\n", 10);
     expect_frame("Frame - single byte", "Q", 1, "1\r\nQ\r\n", 6);
@@ -385,7 +385,7 @@ void run_body_tests(void) {
     // Terminator.
     expect_frame_last("Frame - terminator 0CRLFCRLF");
 
-    // Encoder/decoder are inverses — including binary and embedded CRLF payloads.
+    // Encoder/decoder are inverses, including binary and embedded CRLF payloads.
     expect_frame_roundtrip("Roundtrip - text",          "ABCDE", 5);
     expect_frame_roundtrip("Roundtrip - single byte",   "Q", 1);
     expect_frame_roundtrip("Roundtrip - binary w/ NULs", bin, sizeof(bin));
@@ -396,7 +396,7 @@ void run_body_tests(void) {
         "................................................................"
         "................................................................", 256);
 
-    // parse_content_length now thin-wraps parse_uint with base=10 — quick sanity tie-in.
+    // parse_content_length now thin-wraps parse_uint with base=10. Quick sanity tie-in.
     expect_content_length("CL via PU - small",  "100", PARSE_OK, 100);
     expect_content_length("CL via PU - empty",  "",    PARSE_BAD_REQUEST, 0);
 }

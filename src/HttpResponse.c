@@ -183,7 +183,7 @@ ssize_t chunk_frame(const char * payload, const size_t len, char * out, const si
     memcpy(out + n, payload, len);
     out[n + len] = '\r';
     out[n + len + 1] = '\n';
-    return n + len + 2;
+    return (ssize_t)n + len + 2;
 }
 
 ssize_t chunk_frame_last (char * out, const size_t out_cap) {

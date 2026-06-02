@@ -114,8 +114,8 @@ examples/main.c        runnable demo app
 tests/                 parser test suite
 ```
 
-Implementation details — socket plumbing (`Connection.h`), the byte-level
-parser (`parser.h`), and supporting types — live in `src/` and are unreachable
+Implementation details: socket plumbing (`Connection.h`), the byte-level
+parser (`parser.h`), and supporting types, live in `src/` and are unreachable
 through the consumer's include path. The library's ABI is everything under
 `include/http_server/` and nothing else.
 
@@ -153,5 +153,5 @@ Already done:
   phase enum (`CONN_READING_REQUEST → CONN_READING_BODY_* → CONN_BUILDING →
   CONN_SENDING_RESPONSE`) and a tagged-union arm holding the per-phase scratch;
   the dispatcher runs each connection forward until it would block, then yields
-  back to the poll loop. No `fork()`, no threads — portable to RTOS-class
+  back to the poll loop. No `fork()`, no threads. Portable to RTOS-class
   hardware.
