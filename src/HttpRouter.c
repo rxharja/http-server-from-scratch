@@ -4,6 +4,7 @@
 
 #include "http_server/HttpRouter.h"
 
+#include <assert.h>
 #include <dirent.h>
 #include <sys/stat.h>
 #include "parser.h"
@@ -44,11 +45,11 @@ static int file_read(const char *path, char *dest, const size_t size, size_t *ou
     return 0;
 }
 
-static CachedFile *cached_file_static_load(const char *url_path, const char *fs_path) {
+static ContentEntry *content_entry_static_load(const char *url_path, const char *fs_path) {
     struct stat st;
     if (stat(fs_path, &st) != 0) return NULL;
 
-    CachedFile *c = malloc(sizeof(*c) + st.st_size + 1 + LEN_BUF_SIZE);
+    ContentEntry *c = malloc(sizeof(*c) + st.st_size + 1 + LEN_BUF_SIZE);
     if (!c) return NULL;
 
     if (file_read(fs_path, c->data, st.st_size, &c->len) != 0) { free(c); return NULL; }
@@ -56,37 +57,47 @@ static CachedFile *cached_file_static_load(const char *url_path, const char *fs_
     char *len_buf = c->data + c->len + 1;
     snprintf(len_buf, LEN_BUF_SIZE, "%zu", c->len);
 
-    c->headers[0] = (ResponseHeader){ "Content-Type",   content_registry_lookup(fs_path) };
+    c->headers[0] = (ResponseHeader){ "Content-Type",   content_type(fs_path) };
     c->headers[1] = (ResponseHeader){ "Content-Length", len_buf };
     c->headers[2] = (ResponseHeader){ "Cache-Control", "max-age=31536000, immutable" };
+    c->mode = SERVE_STATIC_RESIDENT;
+    c->reval = NULL; // not used for static entries
     return c;
 }
 
-static DynamicCachedFile *cached_file_dynamic_load(const char *url_path, const char *fs_path, const struct stat *st) {
-    DynamicCachedFile *d = malloc(sizeof(*d) + st->st_size + 1 + LEN_BUF_SIZE);
+static ContentEntry *content_entry_dynamic_load(const char *url_path, const char *fs_path, const struct stat *st) {
+    ContentEntry *d = malloc(sizeof(*d) + st->st_size + 1);
     if (!d) return NULL;
 
+    d->reval = malloc(sizeof(RevalMeta));
+
+    if (!d->reval) {
+        free(d);
+        return NULL;
+    }
+
     if (file_read(fs_path, d->data, st->st_size, &d->len) != 0) { free(d); return NULL; }
-    d->mtime = st->st_mtime;
-    d->size  = st->st_size;
+    d->reval->mtime = st->st_mtime;
+    d->reval->size  = st->st_size;
 
-    strncpy(d->fs_path, fs_path, sizeof d->fs_path - 1);
-    d->fs_path[sizeof d->fs_path - 1] = '\0';
+    strncpy(d->reval->fs_path, fs_path, sizeof d->reval->fs_path - 1);
+    d->reval->fs_path[sizeof d->reval->fs_path - 1] = '\0';
 
-    snprintf(d->etag, sizeof d->etag, "W/\"%lx-%lx\"",
+    snprintf(d->reval->etag, sizeof d->reval->etag, "W/\"%lx-%lx\"",
              (unsigned long)st->st_mtime, (unsigned long)st->st_size);
 
     const struct tm *gmt = gmtime(&st->st_mtime);
-    strftime(d->last_modified, sizeof d->last_modified, "%a, %d %b %Y %H:%M:%S GMT", gmt);
+    strftime(d->reval->last_modified, sizeof d->reval->last_modified, "%a, %d %b %Y %H:%M:%S GMT", gmt);
 
     char *len_buf = d->data + d->len + 1;
     snprintf(len_buf, LEN_BUF_SIZE, "%zu", d->len);
 
-    d->headers[0] = (ResponseHeader){ "Content-Type",   content_registry_lookup(fs_path) };
+    d->headers[0] = (ResponseHeader){ "Content-Type",   content_type(fs_path) };
     d->headers[1] = (ResponseHeader){ "Content-Length", len_buf };
-    d->headers[2] = (ResponseHeader){ "ETag",           d->etag };
-    d->headers[3] = (ResponseHeader){ "Last-Modified",  d->last_modified };
+    d->headers[2] = (ResponseHeader){ "ETag",           d->reval->etag };
+    d->headers[3] = (ResponseHeader){ "Last-Modified",  d->reval->last_modified };
     d->headers[4] = (ResponseHeader){ "Cache-Control",  "no-cache" };
+    d->mode = SERVE_DYN_RESIDENT; // todo: handle stream
     return d;
 }
 
@@ -99,7 +110,7 @@ int static_dir_cache(ContentRegistry * cache, const char * dir_path, const char 
         return 0;
     }
 
-    int fcount = 0;
+    int f_count = 0;
     while ((de = readdir(dr)) != NULL) {
         if (de->d_name[0] == '.') continue; // Skip hidden files and navigation directories
         if (de->d_type != DT_REG) continue; // Only process regular files
@@ -112,16 +123,17 @@ int static_dir_cache(ContentRegistry * cache, const char * dir_path, const char 
 
         snprintf(fpath, sizeof(fpath), "%s/%s", dir_path, de->d_name);
 
-        CachedFile * file = cached_file_static_load(url, fpath);
+        ContentEntry * file = content_entry_static_load(url, fpath);
+
         if (file) {
             dict_insert(cache, url, file);
             if (strcmp("index.html", de->d_name) == 0) dict_insert(cache, "/", file);
-            fcount++;
+            f_count++;
         }
     }
 
     closedir(dr);
-    return fcount;
+    return f_count;
 }
 
 void content_registry_free(ContentRegistry * cache) {
@@ -130,7 +142,8 @@ void content_registry_free(ContentRegistry * cache) {
     dict_free(cache, kvp_free);
 }
 
-char* content_registry_lookup(const char * path) {
+char* content_type(const char * path) {
+    assert(path);
     if (str_ends_with(path, ".html")) return "text/html";
     if (str_ends_with(path, ".ico")) return "image/x-icon";
     if (str_ends_with(path, ".jpg") || str_ends_with(path, ".jpeg")) return "image/jpeg";
@@ -143,64 +156,89 @@ char* content_registry_lookup(const char * path) {
 }
 
 // the following methods must be here due to the dependency on CachedFile and DynamicCachedFile
-HttpResponse response_cached(const HttpRequest * req, const CachedFile * file) {
+HttpResponse response_cached(const HttpRequest * req, const ContentEntry * file) {
+    assert(file);
+    assert(req);
+
     HttpResponse res = {
         .status = 200, .reason = "OK",
         .head_only = req->request_line.method == HEAD,
         .headers = file->headers,  .header_count = 3,
+        .kind = BODY_BUFFER
     };
 
+    // TODO: address if it's streaming or not
     if (!res.head_only) {
-        res.body = file->data;
-        res.body_len = file->len;
+        res.body.body_buf.buffer = (char*)file->data;
+        res.body.body_buf.size = file->len;
     }
 
     return res;
 }
 
-HttpResponse response_dynamic_304(const DynamicCachedFile *f) {
+HttpResponse response_dynamic_304(const ContentEntry  *f) {
+    assert(f);
     // headers[2] -> ETag, Last-Modified, Cache-Control
     return response_none(304, "Not Modified", &f->headers[2], 3);
 }
 
-HttpResponse response_dynamic(const DynamicCachedFile *f) {
+HttpResponse response_dynamic(const ContentEntry  *f) {
+    assert(f);
     return response_buffer(200, "OK", f->data, f->len, f->headers, 5);
 }
 
-static int request_validators_match(const HttpRequest *req, const DynamicCachedFile *f) {
+static int request_validators_match(const HttpRequest *req, const ContentEntry  *f) {
+    assert(req);
+    assert(f);
+    assert(f->reval);
+
     const Header *inm = header_find(req->headers, req->header_count, "if-none-match");
     if (inm) {
         if (strcmp(inm->value, "*") == 0) return 1;          // §3.2 wildcard
-        return strcmp(inm->value, f->etag) == 0;             // ignore IMS even on miss
+        return strcmp(inm->value, f->reval->etag) == 0;             // ignore IMS even on miss
     }
     const Header *ims = header_find(req->headers, req->header_count, "if-modified-since");
     if (ims) {
         time_t t;
         if (http_date_parse(ims->value, &t) != 0) return 0;  // malformed → treat as miss
-        return f->mtime <= t;
+        return f->reval->mtime <= t;
     }
     return 0;
 }
 
-ContentLookupResult cache_dynamic_lookup(ContentRegistry * cache, const HttpRequest * req, const char * url_path) {
-    ContentLookupResult r = {0};
-    DynamicCachedFile *entry = dict_find(cache, url_path);
-    if (!entry) { r.status = CONTENT_MISS; return r; } // fall through to routes
+ContentLookupResult content_registry_lookup(ContentRegistry * registry, const HttpRequest * req, const char * url_path) {
+    ContentEntry *entry = dict_find(registry, url_path);
+    if (!entry) return (ContentLookupResult) { .status = CONTENT_MISS }; // fall through to routes
 
-    struct stat st;
-    if (stat(entry->fs_path, &st) != 0) { r.status = CONTENT_GONE; return r; } // 404
+    switch (entry->mode) {
+        case SERVE_DYN_RESIDENT: {
+            struct stat st;
 
-    // if modified times don't match or the sizes have changed
-    if (st.st_mtime != entry->mtime || st.st_size != entry->size) {
-        DynamicCachedFile *fresh = cached_file_dynamic_load(url_path, entry->fs_path, &st);
-        if (!fresh) { r.status = CONTENT_GONE; return r; } // 404
-        dict_insert(cache, url_path, fresh); // dict_insert replaces + frees the old entry
-        entry = fresh;
+            if (stat(entry->reval->fs_path, &st) != 0) return (ContentLookupResult) { .status = CONTENT_GONE };// 404
+
+            // if modified times don't match or the sizes have changed
+            if (st.st_mtime != entry->reval->mtime || st.st_size != entry->reval->size) {
+                ContentEntry *fresh = content_entry_dynamic_load(url_path, entry->reval->fs_path, &st);
+                if (!fresh) return (ContentLookupResult) { .status = CONTENT_GONE }; // 404
+                dict_insert(registry, url_path, fresh); // dict_insert replaces + frees the old entry
+                entry = fresh;
+            }
+
+            return (ContentLookupResult) {
+                .status = request_validators_match(req, entry) ? CONTENT_NOT_MODIFIED : CONTENT_HIT,
+                .entry = entry
+            };
+        }
+
+        case SERVE_DYN_STREAMED: {
+            return (ContentLookupResult) { .status = CONTENT_HIT, .entry = entry };
+        }
+
+        default:
+        case SERVE_STATIC_RESIDENT: return (ContentLookupResult) { .status = CONTENT_HIT, .entry = entry };
+
     }
 
-    r.entry = entry;
-    r.status = request_validators_match(req, entry) ? CONTENT_NOT_MODIFIED : CONTENT_HIT;
-    return r;
 }
 
 int router_has_duplicate_routes(const Router * router) {
@@ -209,7 +247,7 @@ int router_has_duplicate_routes(const Router * router) {
     for (int i = 0; i < router->route_count; i++) {
         const Route * route = &router->routes[i];
         if (route->method != get) continue;
-        const CachedFile * file = dict_find(router->registry, route->path);
+        const ContentEntry * file = dict_find(router->registry, route->path);
         if (file) return 1;
     }
 
@@ -225,5 +263,9 @@ int router_has_duplicate_routes(const Router * router) {
 }
 
 int serve_dir(ContentRegistry * cache, const char * dir_path, const char * url_prefix, ServeMode mode) {
+
+}
+
+int serve_file(ContentRegistry * cache, const char * dir_path, const char * url_prefix, ServeMode mode) {
 
 }

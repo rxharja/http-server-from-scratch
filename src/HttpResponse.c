@@ -61,9 +61,9 @@ ssize_t response_serialize(const HttpResponse * resp, char * buffer, const size_
         if (ascii_ieq(resp->headers[i].key, "content-length")) saw_content_length = 1;
     }
 
-    if (!saw_content_length && resp->body_len > 0) {
+    if (!saw_content_length && resp->body.body_buf.size > 0) {
         written = snprintf(buffer + offset, buffer_size - offset,
-            "Content-Length: %zu\r\n", resp->body_len);
+            "Content-Length: %zu\r\n", resp->body.body_buf.size);
         if (written < 0 || (size_t)written >= buffer_size - offset) return -1;
         offset += written;
     }
@@ -77,10 +77,10 @@ ssize_t response_serialize(const HttpResponse * resp, char * buffer, const size_
     buffer[offset++] = '\r'; buffer[offset++] = '\n';
 
     // Body
-    if (!resp->head_only && resp->body && resp->body_len > 0) {
-        if (offset + resp->body_len > buffer_size) return -1;
-        memcpy(buffer + offset, resp->body, resp->body_len);
-        offset += resp->body_len;
+    if (!resp->head_only && resp->body.body_buf.buffer && resp->body.body_buf.size > 0) {
+        if (offset + resp->body.body_buf.size > buffer_size) return -1;
+        memcpy(buffer + offset, resp->body.body_buf.buffer, resp->body.body_buf.size);
+        offset += resp->body.body_buf.size;
     }
 
     return offset; // total bytes written
@@ -174,4 +174,20 @@ HttpResponse response_buffer(const int status, const char *reason, const char *b
             .cap = len,
         }
     };
+}
+
+size_t chunk_frame(const char * payload, const size_t len, char * out, const size_t out_cap) {
+    const int n = snprintf(out, out_cap, "%zx\r\n", len); // hex size
+    if (n < 0 || (size_t)n >= out_cap) return -1; // truncated snprintf or errored
+    if ((size_t)n + len + 2 > out_cap) return -1; // payload + trailing CRLF won't fit
+    memcpy(out, payload, len);
+    out[n + len] = '\r';
+    out[n + len + 1] = '\n';
+    return n + len + 2;
+}
+
+size_t chunk_frame_last (char * out, const size_t out_cap) {
+    if (out_cap < 5) return -1;
+    memcpy(out, "0\r\n\r\n", 5);
+    return 5;
 }

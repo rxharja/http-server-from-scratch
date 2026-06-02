@@ -273,16 +273,16 @@ static ConnPhase step_response_build(Connection * conn, const Router * router) {
     const HttpMethod method = conn->req_parsed.request_line.method == HEAD ? GET : conn->req_parsed.request_line.method;
 
     if (method == GET) {
-        const CachedFile * sf = dict_find(router->registry, req->request_line.path);
+        const ContentEntry * sf = dict_find(router->registry, req->request_line.path);
         if (sf) { res = response_cached(&conn->req_parsed, sf); goto build_resp; }
 
-        const ContentLookupResult d = cache_dynamic_lookup(router->dynamic_cache, req, req->request_line.path);
+        const ContentLookupResult d = content_registry_lookup(router->registry, req, req->request_line.path);
 
         switch (d.status) {
-            case CONTENT_MISS:                                       break;
+            case CONTENT_MISS:                                                               break;
             case CONTENT_GONE:         res = response_error_from_status(PARSE_NOT_FOUND); goto build_resp;
-            case CONTENT_NOT_MODIFIED: res = response_dynamic_304(d.entry);                 goto build_resp;
-            case CONTENT_HIT:          res = response_dynamic(d.entry); goto build_resp;
+            case CONTENT_NOT_MODIFIED: res = response_dynamic_304(d.entry);                  goto build_resp;
+            case CONTENT_HIT:          res = response_dynamic(d.entry);                      goto build_resp;
         }
     }
 
@@ -297,7 +297,14 @@ static ConnPhase step_response_build(Connection * conn, const Router * router) {
 
 build_resp: ;
     if (req->request_line.method == HEAD) res.head_only = 1;
-    conn->resp_buf.size = (size_t)response_serialize(&res, conn->resp_buf.buffer, conn->resp_buf.cap, conn->keep_alive);
+    ssize_t resp_size = response_serialize(&res, conn->resp_buf.buffer, conn->resp_buf.cap, conn->keep_alive);
+    if (resp_size < 0) {
+        res = response_error_from_status(PARSE_SERVER_ERROR);
+        resp_size = response_serialize(&res, conn->resp_buf.buffer, conn->resp_buf.cap, conn->keep_alive);
+    }
+
+    assert(resp_size >= 0);
+    conn->resp_buf.size = (size_t)resp_size;
 
     if (conn->next_req_offset > 0) {
         const size_t pipelined = conn->req_buf.size - conn->next_req_offset;

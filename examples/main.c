@@ -13,7 +13,7 @@ static HttpResponse not_found(const HttpRequest * request) {
         .status = 404, .reason = "Not Found",
         .headers = h,  .header_count = 1,
         .kind = BODY_BUFFER,
-        .body.body_buf = (HttpBuffer) { .buffer = body, .size = sizeof body - 1, .cap = sizeof body - 1 }
+        .body.body_buf = (HttpBuffer) { .buffer = (char*)body, .size = sizeof body - 1, .cap = sizeof body - 1 }
     };
     return response;
 }
@@ -55,7 +55,7 @@ int main(const int argc, char *argv[]) {
         .routes = routes
     };
 
-    static_dir_cache(router.registry, "wwwroot-wasm", NULL);
+    static_dir_cache(router.registry, "wwwroot", NULL);
 
     server_run(argv[1], &router, BACKLOG);
 

@@ -44,6 +44,7 @@ typedef struct {
     ServeMode mode;
     size_t len;
     ResponseHeader headers[5]; // [0] content-type [1] content-length [2] ETag [3] last-modified [4] cache-control
+    RevalMeta * reval; // NULL for static
     char data[]; // file bytes, 0 length for streamed
 } ContentEntry;
 
@@ -108,7 +109,7 @@ int static_dir_cache(ContentRegistry *cache, const char *dir_path, const char *u
  * @param file      cached entry; ownership transfers to the cache
  * @return          0 on success, non-zero on allocation failure
  */
-int cache_file(ContentRegistry *cache, const char *url_path, CachedFile *file);
+int cache_file(ContentRegistry *cache, const char *url_path, ContentEntry *file);
 
 /**
  * @param cache  cache to free; safe to pass NULL
@@ -119,7 +120,7 @@ void content_registry_free(ContentRegistry *cache);
  * @param path  filesystem or URL path
  * @return      static MIME type string inferred from extension; defaults to "application/octet-stream"
  */
-char *content_registry_lookup(const char *path);
+char *content_type(const char *path);
 
 /**
  * Build a 200 response from a pre-cached static file.
@@ -127,29 +128,29 @@ char *content_registry_lookup(const char *path);
  * @param req   originating request (used for HEAD detection / validators)
  * @param file  cached file entry
  */
-HttpResponse response_cached(const HttpRequest *req, const CachedFile *file);
+HttpResponse response_cached(const HttpRequest *req, const ContentEntry *file);
 
 /**
  * Re-stats the backing file and returns DYN_NOT_REGISTERED / DYN_GONE /
  * DYN_NOT_MODIFIED / DYN_HIT. On DYN_HIT the cache entry holds the current body.
  *
- * @param cache     dynamic cache
+ * @param registry     dynamic cache
  * @param req       originating request (used for If-None-Match / If-Modified-Since)
  * @param url_path  URL key
  */
-ContentLookupResult cache_dynamic_lookup(ContentRegistry *cache, const HttpRequest *req, const char *url_path);
+ContentLookupResult content_registry_lookup(ContentRegistry *registry, const HttpRequest *req, const char *url_path);
 
 /**
  * @param f  cache entry the client's validators matched
  * @return   304 Not Modified response (headers only)
  */
-HttpResponse response_dynamic_304(const DynamicCachedFile *f);
+HttpResponse response_dynamic_304(const ContentEntry  *f);
 
 /**
  * @param f  cache entry to serve
  * @return   200 response with body + ETag + Last-Modified
  */
-HttpResponse response_dynamic(const DynamicCachedFile *f);
+HttpResponse response_dynamic(const ContentEntry  *f);
 
 /**
  * Sanity check used at startup: flags accidental (method,path) duplicates in the

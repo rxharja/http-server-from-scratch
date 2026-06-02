@@ -120,4 +120,9 @@ HttpResponse response_stream(int status, const char *reason,
                              void *ctx, void (*cleanup)(void *ctx),
                              const ResponseHeader * headers, size_t header_count);
 
+size_t chunk_frame(const char * payload, size_t len, char * out, size_t out_cap);
+
+size_t chunk_frame_last (char * out, size_t out_cap);
+
+
 #endif //HTTPSERVER_HEADER_H

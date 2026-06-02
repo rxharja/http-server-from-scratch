@@ -7,6 +7,8 @@
 #include "http_server/linked_node_macro.h"
 #include "http_server/Dictionary.h"
 
+#include "http_server/HttpRouter.h"
+
 uint64_t key_hash(const char *c) {
     uint64_t hash = 1469598103934665603ULL; // FNV offset basis
     while (*c) {
@@ -91,6 +93,10 @@ void* dict_find(const Dictionary *d, const Key key) {
 
 void kvp_free(void* p) {
     const Kvp* kvp = (Kvp*)p;
-    if (kvp->value) free(kvp->value);    // Free CachedFile (void* value)
+    ContentEntry* entry = kvp->value;
+
+    if (entry && entry->reval) free(entry->reval);
+    if (entry) free(entry);
+
     if (kvp->key) free((void*)kvp->key); // Free key if heap-allocated string
 }
