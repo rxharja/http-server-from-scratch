@@ -360,14 +360,13 @@ void run_body_tests(void) {
 
     // chunk_frame — the encoder. Exact-wire assertions; the hex-size and
     // embedded-NUL cases are the ones that catch %zu/%s bugs.
-    expect_frame("Frame - small chunk",
-        "ABCDE", 5, "5\r\nABCDE\r\n", 10);
-    expect_frame("Frame - single byte",
-        "Q", 1, "1\r\nQ\r\n", 6);
+    expect_frame("Frame - small chunk", "ABCDE", 5, "5\r\nABCDE\r\n", 10);
+    expect_frame("Frame - single byte", "Q", 1, "1\r\nQ\r\n", 6);
 
     // Hex size, not decimal: 16 bytes -> "10", 26 bytes -> "1a".
     expect_frame("Frame - hex size (16 -> 10)",
         "0123456789ABCDEF", 16, "10\r\n0123456789ABCDEF\r\n", 22);
+
     expect_frame("Frame - hex size (26 -> 1a)",
         "abcdefghijklmnopqrstuvwxyz", 26,
         "1a\r\nabcdefghijklmnopqrstuvwxyz\r\n", 32);

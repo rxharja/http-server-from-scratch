@@ -176,17 +176,17 @@ HttpResponse response_buffer(const int status, const char *reason, const char *b
     };
 }
 
-size_t chunk_frame(const char * payload, const size_t len, char * out, const size_t out_cap) {
+ssize_t chunk_frame(const char * payload, const size_t len, char * out, const size_t out_cap) {
     const int n = snprintf(out, out_cap, "%zx\r\n", len); // hex size
     if (n < 0 || (size_t)n >= out_cap) return -1; // truncated snprintf or errored
     if ((size_t)n + len + 2 > out_cap) return -1; // payload + trailing CRLF won't fit
-    memcpy(out, payload, len);
+    memcpy(out + n, payload, len);
     out[n + len] = '\r';
     out[n + len + 1] = '\n';
     return n + len + 2;
 }
 
-size_t chunk_frame_last (char * out, const size_t out_cap) {
+ssize_t chunk_frame_last (char * out, const size_t out_cap) {
     if (out_cap < 5) return -1;
     memcpy(out, "0\r\n\r\n", 5);
     return 5;
