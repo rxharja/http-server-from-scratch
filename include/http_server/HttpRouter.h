@@ -128,7 +128,7 @@ char *content_type(const char *path);
  * @param req   originating request (used for HEAD detection / validators)
  * @param file  cached file entry
  */
-HttpResponse response_cached(const HttpRequest *req, const ContentEntry *file);
+HttpResponse response_resident(const HttpRequest *req, const ContentEntry *file);
 
 /**
  * Re-stats the backing file and returns DYN_NOT_REGISTERED / DYN_GONE /
@@ -145,12 +145,6 @@ ContentLookupResult content_registry_lookup(ContentRegistry *registry, const Htt
  * @return   304 Not Modified response (headers only)
  */
 HttpResponse response_dynamic_304(const ContentEntry  *f);
-
-/**
- * @param f  cache entry to serve
- * @return   200 response with body + ETag + Last-Modified
- */
-HttpResponse response_dynamic(const ContentEntry  *f);
 
 /**
  * Sanity check used at startup: flags accidental (method,path) duplicates in the

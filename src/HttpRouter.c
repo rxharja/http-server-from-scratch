@@ -155,15 +155,18 @@ char* content_type(const char * path) {
     return "application/octet-stream";
 }
 
-// the following methods must be here due to the dependency on CachedFile and DynamicCachedFile
-HttpResponse response_cached(const HttpRequest * req, const ContentEntry * file) {
+// the following functions must be here due to the dependency on CachedFile and DynamicCachedFile
+HttpResponse response_resident(const HttpRequest * req, const ContentEntry * file) {
     assert(file);
     assert(req);
+
+    // dynamic content contains ETag and Last Modified headers as well
+    const size_t header_count = file->mode == SERVE_STATIC_RESIDENT ? 3 : 5;
 
     HttpResponse res = {
         .status = 200, .reason = "OK",
         .head_only = req->request_line.method == HEAD,
-        .headers = file->headers,  .header_count = 3,
+        .headers = file->headers,  .header_count = header_count,
         .kind = BODY_BUFFER
     };
 
@@ -176,15 +179,32 @@ HttpResponse response_cached(const HttpRequest * req, const ContentEntry * file)
     return res;
 }
 
+static ssize_t file_pull(void * ctx, char * out, size_t cap) {
+
+}
+
+static void file_close(void * ctx) {
+
+}
+
+static Stream file_stream_open(const char * fs_path) {
+
+}
+
+HttpResponse response_streamed(const ContentEntry * file) {
+    assert(file);
+    assert(file->reval);
+    assert(file->reval->fs_path);
+
+    const Stream s = file_stream_open(file->reval->fs_path);
+    if (!s.pull) return response_error_from_status(PARSE_SERVER_ERROR);
+    return response_stream(200, "OK", s.pull, s.ctx, s.cleanup, file->headers, sizeof(file->headers));
+}
+
 HttpResponse response_dynamic_304(const ContentEntry  *f) {
     assert(f);
     // headers[2] -> ETag, Last-Modified, Cache-Control
     return response_none(304, "Not Modified", &f->headers[2], 3);
-}
-
-HttpResponse response_dynamic(const ContentEntry  *f) {
-    assert(f);
-    return response_buffer(200, "OK", f->data, f->len, f->headers, 5);
 }
 
 static int request_validators_match(const HttpRequest *req, const ContentEntry  *f) {
@@ -260,6 +280,14 @@ int router_has_duplicate_routes(const Router * router) {
     }
 
     return 0;
+}
+
+static HttpResponse response_for_entry(const HttpRequest * req, const ContentEntry * entry) {
+     switch (entry->mode) {
+        case SERVE_STATIC_RESIDENT: {}
+        case SERVE_DYN_RESIDENT: {}
+        case SERVE_DYN_STREAMED: {}
+     }
 }
 
 int serve_dir(ContentRegistry * cache, const char * dir_path, const char * url_prefix, ServeMode mode) {

@@ -259,6 +259,32 @@ static ConnPhase step_body_chunked_read(Connection * conn) {
     }
 }
 
+static void stream_release(Connection * conn) {
+    if (conn->producer.cleanup) conn->producer.cleanup(conn->producer.ctx);
+    conn->producer.cleanup = NULL;
+    conn->producer.pull    = NULL;
+    conn->producer.ctx     = NULL;
+}
+
+static ConnPhase stream_abort(Connection * conn) {
+    stream_release(conn);
+    conn->st.stream.phase = STREAM_DONE;
+    return CONN_CLOSED;
+}
+
+static void request_consume(Connection * conn) {
+    if (conn->next_req_offset > 0) {
+        const size_t pipelined = conn->req_buf.size - conn->next_req_offset;
+        memmove(conn->req_buf.buffer, conn->req_buf.buffer + conn->next_req_offset, pipelined);
+        conn->req_buf.size = pipelined;
+    }
+    else {
+        conn->req_buf.size = 0;
+    }
+
+    conn->next_req_offset = 0;
+}
+
 static ConnPhase step_response_build(Connection * conn, const Router * router) {
     assert(conn);
     assert(router);
@@ -274,7 +300,7 @@ static ConnPhase step_response_build(Connection * conn, const Router * router) {
 
     if (method == GET) {
         const ContentEntry * sf = dict_find(router->registry, req->request_line.path);
-        if (sf) { res = response_cached(&conn->req_parsed, sf); goto build_resp; }
+        if (sf) { res = response_resident(&conn->req_parsed, sf); goto build_resp; }
 
         const ContentLookupResult d = content_registry_lookup(router->registry, req, req->request_line.path);
 
@@ -282,7 +308,7 @@ static ConnPhase step_response_build(Connection * conn, const Router * router) {
             case CONTENT_MISS:                                                               break;
             case CONTENT_GONE:         res = response_error_from_status(PARSE_NOT_FOUND); goto build_resp;
             case CONTENT_NOT_MODIFIED: res = response_dynamic_304(d.entry);                  goto build_resp;
-            case CONTENT_HIT:          res = response_dynamic(d.entry);                      goto build_resp;
+            case CONTENT_HIT:          res = response_resident(&conn->req_parsed, d.entry);  goto build_resp;
         }
     }
 
@@ -296,8 +322,28 @@ static ConnPhase step_response_build(Connection * conn, const Router * router) {
     else                                  res = response_error_from_status(PARSE_NOT_FOUND);
 
 build_resp: ;
+    // no head_only here as serializing emits no body for BODY_STREAM,
+    // and the orchestrator skips the pull loop for head (STREAM_HEADER -> STREAM_DONE)
+    if (res.kind == BODY_STREAM) {
+        conn->producer = res.body.stream;
+        const ssize_t head = response_serialize(&res, conn->resp_buf.buffer, conn->resp_buf.cap, conn->keep_alive);
+
+        if (head < 0) {
+            stream_release(conn);
+            res = response_error_from_status(PARSE_SERVER_ERROR);
+        }
+        else {
+            conn->resp_buf.size = (size_t)head;
+            conn->st.stream.phase = STREAM_HEADER;
+            conn->st.stream.send.sent = 0;
+            request_consume(conn);
+            return CONN_SENDING_RESPONSE_STREAM;
+        }
+    }
+
     if (req->request_line.method == HEAD) res.head_only = 1;
     ssize_t resp_size = response_serialize(&res, conn->resp_buf.buffer, conn->resp_buf.cap, conn->keep_alive);
+
     if (resp_size < 0) {
         res = response_error_from_status(PARSE_SERVER_ERROR);
         resp_size = response_serialize(&res, conn->resp_buf.buffer, conn->resp_buf.cap, conn->keep_alive);
@@ -305,14 +351,7 @@ build_resp: ;
 
     assert(resp_size >= 0);
     conn->resp_buf.size = (size_t)resp_size;
-
-    if (conn->next_req_offset > 0) {
-        const size_t pipelined = conn->req_buf.size - conn->next_req_offset;
-        memmove(conn->req_buf.buffer, conn->req_buf.buffer + conn->next_req_offset, pipelined);
-    }
-    else conn->req_buf.size = 0;
-    conn->next_req_offset = 0;
-
+    request_consume(conn);
     return phase_send_begin(conn);
 }
 
@@ -340,18 +379,6 @@ static ConnPhase step_response_send(Connection * conn) {
             return CONN_READING_REQUEST;
         default: return CONN_CLOSED;
     }
-}
-
-static void stream_release(Connection * conn) {
-    if (conn->producer.cleanup) conn->producer.cleanup(conn->producer.ctx);
-    conn->producer.cleanup = NULL;
-    conn->producer.ctx =     NULL;
-}
-
-static ConnPhase stream_abort(Connection * conn) {
-    stream_release(conn);
-    conn->st.stream.phase = STREAM_DONE;
-    return CONN_CLOSED;
 }
 
 static StreamStep stream_handle_response(Connection * conn, const SendReponseStatus status, const StreamPhase phase) {
