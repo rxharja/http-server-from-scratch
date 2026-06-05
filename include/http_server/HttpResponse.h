@@ -32,7 +32,7 @@ typedef struct {
     size_t header_count;
     union {
         HttpBuffer body_buf;
-        Stream Stream;
+        Stream stream;
     } body;
     BodyKind kind;
     int head_only;

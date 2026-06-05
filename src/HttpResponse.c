@@ -211,6 +211,21 @@ HttpResponse response_buffer(const int status, const char *reason, const char *b
     };
 }
 
+HttpResponse response_stream(const int status, const char *reason,
+                             ssize_t (*pull)(void *ctx, char *out, size_t cap),
+                             void *ctx, void (*cleanup)(void *ctx),
+                             const ResponseHeader * headers, const size_t header_count) {
+    return (HttpResponse) {
+        .status = status, .reason = reason,
+        .headers = headers, .header_count = header_count,
+        .kind = BODY_STREAM, .body.stream = (Stream) {
+           .ctx = ctx,
+            .pull = pull,
+            .cleanup = cleanup,
+        }
+    };
+}
+
 ssize_t chunk_frame(const char * payload, const size_t len, char * out, const size_t out_cap) {
     const int n = snprintf(out, out_cap, "%zx\r\n", len); // hex size
     if (n < 0 || (size_t)n >= out_cap) return -1; // truncated snprintf or errored
