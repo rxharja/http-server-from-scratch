@@ -180,7 +180,7 @@ HttpResponse response_resident(const HttpRequest * req, const ContentEntry * fil
 }
 
 static ssize_t file_pull(void * ctx, char * out, size_t cap) {
-
+    int fd = ((FileCtx*)ctx)->fd;
 }
 
 static void file_close(void * ctx) {
