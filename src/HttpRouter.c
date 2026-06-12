@@ -4,8 +4,13 @@
 
 #include "http_server/HttpRouter.h"
 
+#include <stdlib.h>
 #include <assert.h>
 #include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <asm-generic/errno-base.h>
 #include <sys/stat.h>
 #include "parser.h"
 
@@ -179,16 +184,29 @@ HttpResponse response_resident(const HttpRequest * req, const ContentEntry * fil
     return res;
 }
 
-static ssize_t file_pull(void * ctx, char * out, size_t cap) {
-    int fd = ((FileCtx*)ctx)->fd;
+// an built-in framework cast of void * ctx below
+typedef struct { int fd; } FileCtx;
+
+static ssize_t file_pull(void * ctx, char * out, const size_t cap) {
+    const int fd = ((FileCtx*)ctx)->fd;
+    ssize_t n;
+    do { n = read(fd, out, cap); } while (n < 0 && errno == EINTR);
+    return n; // > 0 bytes, 0 EOF, < 0 error
 }
 
 static void file_close(void * ctx) {
-
+    close(((FileCtx*)ctx)->fd);
+    free(ctx);
 }
 
 static Stream file_stream_open(const char * fs_path) {
-
+    const int fd = open(fs_path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return (Stream){0};
+    // NOLINTNEXTLINE(clang-analyzer-unix.Malloc): ownership transfers to Stream.ctx, freed in file_close
+    FileCtx * c = malloc(sizeof *c);
+    if (!c) { close(fd); return (Stream){0}; }
+    c->fd = fd;
+    return (Stream) { .ctx = c, .pull = file_pull, .cleanup = file_close, };
 }
 
 HttpResponse response_streamed(const ContentEntry * file) {

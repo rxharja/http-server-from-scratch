@@ -19,9 +19,6 @@ typedef struct {
 
 typedef enum { BODY_NONE, BODY_BUFFER, BODY_STREAM } BodyKind;
 
-// an built-in framework cast of void * ctx below
-typedef struct { int fd; } FileCtx;
-
 typedef struct {
     void *ctx;
     ssize_t (*pull)(void * ctx, char * out, size_t cap);
