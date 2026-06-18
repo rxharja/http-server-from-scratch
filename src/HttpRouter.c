@@ -99,7 +99,7 @@ static ContentEntry *content_entry_dynamic_load(const char *url_path, const char
         return NULL;
     }
 
-    if (file_read(fs_path, d->data, st->st_size, &d->len) != 0) { free(d); return NULL; }
+    if (file_read(fs_path, d->data, st->st_size, &d->len) != 0) { free(d->reval); free(d); return NULL; }
 
     reval_fill(d->reval, st, fs_path);
 
@@ -225,7 +225,9 @@ HttpResponse response_streamed(const ContentEntry * file) {
 
     const Stream s = file_stream_open(file->reval->fs_path);
     if (!s.pull) return response_error_from_status(PARSE_SERVER_ERROR);
-    return response_stream(200, "OK", s.pull, s.ctx, s.cleanup, file->headers, sizeof(file->headers));
+
+    // 4 is the number of headers we set when in streaming mode, see serve_file belowprovide.
+    return response_stream(200, "OK", s.pull, s.ctx, s.cleanup, file->headers, 4);
 }
 
 HttpResponse response_dynamic_304(const ContentEntry  *f) {
@@ -355,7 +357,9 @@ int serve_file(ContentRegistry * cache, const char * fs_path, const char * url, 
             entry->headers[1] = (ResponseHeader){ .key = "ETag", .value = entry->reval->etag };
             entry->headers[2] = (ResponseHeader){ .key = "Last-Modified", .value = entry->reval->last_modified };
             entry->headers[3] = (ResponseHeader){ .key = "Cache-Control", .value= "no-cache" };
+
             dict_insert(cache, url, entry);
+
             return 1;
         }
     }
