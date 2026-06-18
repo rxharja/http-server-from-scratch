@@ -184,7 +184,7 @@ HttpResponse response_resident(const HttpRequest * req, const ContentEntry * fil
     return res;
 }
 
-// an built-in framework cast of void * ctx below
+// a built-in framework cast of void * ctx below
 typedef struct { int fd; } FileCtx;
 
 static ssize_t file_pull(void * ctx, char * out, const size_t cap) {
@@ -300,12 +300,14 @@ int router_has_duplicate_routes(const Router * router) {
     return 0;
 }
 
-static HttpResponse response_for_entry(const HttpRequest * req, const ContentEntry * entry) {
+HttpResponse response_for_entry(const HttpRequest * req, const ContentEntry * entry) {
      switch (entry->mode) {
-        case SERVE_STATIC_RESIDENT: {}
-        case SERVE_DYN_RESIDENT: {}
-        case SERVE_DYN_STREAMED: {}
+        case SERVE_STATIC_RESIDENT:
+        case SERVE_DYN_RESIDENT: return response_resident(req, entry);
+        case SERVE_DYN_STREAMED: return response_streamed(entry);
      }
+
+    return response_error_from_status(PARSE_SERVER_ERROR);
 }
 
 int serve_dir(ContentRegistry * cache, const char * dir_path, const char * url_prefix, ServeMode mode) {

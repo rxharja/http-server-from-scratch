@@ -13,5 +13,6 @@ void check(const char *label, int ok, const char *detail);
 void run_request_tests(void);
 void run_body_tests(void);
 void run_response_tests(void);
+void run_stream_tests(void);
 
 #endif //HTTPSERVER_TEST_HARNESS_H

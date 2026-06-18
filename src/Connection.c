@@ -300,7 +300,7 @@ static ConnPhase step_response_build(Connection * conn, const Router * router) {
 
     if (method == GET) {
         const ContentEntry * sf = dict_find(router->registry, req->request_line.path);
-        if (sf) { res = response_resident(&conn->req_parsed, sf); goto build_resp; }
+        if (sf) { res = response_for_entry(&conn->req_parsed, sf); goto build_resp; }
 
         const ContentLookupResult d = content_registry_lookup(router->registry, req, req->request_line.path);
 
@@ -308,7 +308,7 @@ static ConnPhase step_response_build(Connection * conn, const Router * router) {
             case CONTENT_MISS:                                                               break;
             case CONTENT_GONE:         res = response_error_from_status(PARSE_NOT_FOUND); goto build_resp;
             case CONTENT_NOT_MODIFIED: res = response_dynamic_304(d.entry);                  goto build_resp;
-            case CONTENT_HIT:          res = response_resident(&conn->req_parsed, d.entry);  goto build_resp;
+            case CONTENT_HIT:          res = response_for_entry(&conn->req_parsed, d.entry); goto build_resp;
         }
     }
 

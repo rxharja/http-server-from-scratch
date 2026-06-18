@@ -155,4 +155,12 @@ HttpResponse response_dynamic_304(const ContentEntry  *f);
  */
 int router_has_duplicate_routes(const Router *router);
 
+/**
+ *
+ * @param req Request used in the case the entry is a dynamic resident
+ * @param entry Content entry whose mode is used to route between serving dynamic resident or streamed file.
+ * @return HttpResponse based on the entry's mode
+ */
+HttpResponse response_for_entry(const HttpRequest * req, const ContentEntry * entry);
+
 #endif //HTTPSERVER_HTTPROUTER_H

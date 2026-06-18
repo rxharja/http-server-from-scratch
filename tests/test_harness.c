@@ -21,6 +21,7 @@ int main(void) {
     run_request_tests();
     run_body_tests();
     run_response_tests();
+    run_stream_tests();
 
     printf("\n%d/%d passed\n", total - failed, total);
     return failed ? 1 : 0;
