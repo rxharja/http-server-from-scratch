@@ -50,6 +50,24 @@ static int file_read(const char *path, char *dest, const size_t size, size_t *ou
     return 0;
 }
 
+static void reval_fill(RevalMeta * reval, const struct stat * st, const char * fs_path) {
+    assert(reval);
+    assert(st);
+    assert(fs_path);
+
+    reval->mtime = st->st_mtime;
+    reval->size  = st->st_size;
+
+    strncpy(reval->fs_path, fs_path, sizeof reval->fs_path - 1);
+    reval->fs_path[sizeof reval->fs_path - 1] = '\0';
+
+    snprintf(reval->etag, sizeof reval->etag, "W/\"%lx-%lx\"",
+             (unsigned long)st->st_mtime, (unsigned long)st->st_size);
+
+    const struct tm *gmt = gmtime(&st->st_mtime);
+    strftime(reval->last_modified, sizeof reval->last_modified, "%a, %d %b %Y %H:%M:%S GMT", gmt);
+}
+
 static ContentEntry *content_entry_static_load(const char *url_path, const char *fs_path) {
     struct stat st;
     if (stat(fs_path, &st) != 0) return NULL;
@@ -82,17 +100,8 @@ static ContentEntry *content_entry_dynamic_load(const char *url_path, const char
     }
 
     if (file_read(fs_path, d->data, st->st_size, &d->len) != 0) { free(d); return NULL; }
-    d->reval->mtime = st->st_mtime;
-    d->reval->size  = st->st_size;
 
-    strncpy(d->reval->fs_path, fs_path, sizeof d->reval->fs_path - 1);
-    d->reval->fs_path[sizeof d->reval->fs_path - 1] = '\0';
-
-    snprintf(d->reval->etag, sizeof d->reval->etag, "W/\"%lx-%lx\"",
-             (unsigned long)st->st_mtime, (unsigned long)st->st_size);
-
-    const struct tm *gmt = gmtime(&st->st_mtime);
-    strftime(d->reval->last_modified, sizeof d->reval->last_modified, "%a, %d %b %Y %H:%M:%S GMT", gmt);
+    reval_fill(d->reval, st, fs_path);
 
     char *len_buf = d->data + d->len + 1;
     snprintf(len_buf, LEN_BUF_SIZE, "%zu", d->len);
@@ -314,6 +323,42 @@ int serve_dir(ContentRegistry * cache, const char * dir_path, const char * url_p
 
 }
 
-int serve_file(ContentRegistry * cache, const char * dir_path, const char * url_prefix, ServeMode mode) {
+int serve_file(ContentRegistry * cache, const char * fs_path, const char * url, const ServeMode mode) {
+    struct stat st;
+    if (stat(fs_path, &st) != 0) return 0;
 
+    switch (mode) {
+        case SERVE_STATIC_RESIDENT: {
+            ContentEntry * entry = content_entry_static_load(url, fs_path);
+            if (entry == NULL) return 0;
+            dict_insert(cache, url, entry);
+            return 1;
+        }
+        case SERVE_DYN_RESIDENT: {
+            ContentEntry * entry = content_entry_dynamic_load(url, fs_path, &st);
+            if (entry == NULL) return 0;
+            dict_insert(cache, url, entry);
+            return 1;
+        }
+        case SERVE_DYN_STREAMED: {
+            ContentEntry * entry = malloc(sizeof *entry);
+            if (!entry) return 0;
+
+            entry->mode = SERVE_DYN_STREAMED;
+            entry->len = 0;
+            entry->reval = malloc(sizeof(RevalMeta));
+            if (!entry->reval) { free(entry); return 0; }
+
+            reval_fill(entry->reval, &st, fs_path);
+
+            entry->headers[0] = (ResponseHeader){ .key = "Content-Type", .value = content_type(fs_path) };
+            entry->headers[1] = (ResponseHeader){ .key = "ETag", .value = entry->reval->etag };
+            entry->headers[2] = (ResponseHeader){ .key = "Last-Modified", .value = entry->reval->last_modified };
+            entry->headers[3] = (ResponseHeader){ .key = "Cache-Control", .value= "no-cache" };
+            dict_insert(cache, url, entry);
+            return 1;
+        }
+    }
+
+    return 0;
 }
