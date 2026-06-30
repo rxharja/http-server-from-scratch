@@ -352,10 +352,6 @@ int content_registry_add_dir(ContentRegistry * cache, const char * dir_path, con
 
         f_count += content_registry_add_file(cache, fpath, url, mode);
 
-        // alternate version commented out below. It reduces the amount of memory used but at the cost of some
-        // resilience. Freeing /index.html will also free entry and entry->reval twice.
-        //if (strcmp("index.html", de->d_name) == 0) dict_insert(cache, "/", dict_find(cache, "/index.html"));
-
         if (strcmp("index.html", de->d_name) == 0) content_registry_add_file(cache, fpath, "/", mode);
     }
 
