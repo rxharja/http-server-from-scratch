@@ -12,6 +12,10 @@
 #include <sys/socket.h>
 #include "parser.h"
 
+#define CONNECTION_KEEP_ALIVE "Connection: keep-alive\r\n"
+#define CONNECTION_CLOSE "Connection: close\r\n"
+#define TRANSFER_ENCODING_CHUNKED "Transfer-Encoding: chunked\r\n"
+
 static int response_header_write(char * write_buf, const size_t cap, const ResponseHeader * header) {
     int written = 0;
     written = snprintf(write_buf, cap, "%s: %s\r\n", header->key, header->value);
@@ -28,14 +32,17 @@ static size_t response_current_time_write(char * write_buf, const size_t cap) {
     const struct tm *gmt_info = gmtime(&now);
 
     // 3. Format the time: %d (day), %b (abbreviated month), %Y (year), etc.
-
     return strftime(write_buf, cap, "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", gmt_info);
 }
 
-static int response_header_connection_write(char * write_buf, const size_t cap, const int keep_alive) {
-    const char * format = keep_alive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
-    return snprintf(write_buf, cap, format);
+static int response_header_connection_write(char *write_buf, const size_t cap, const int keep_alive) {
+    const char *h = keep_alive ? CONNECTION_KEEP_ALIVE : CONNECTION_CLOSE;
+    const size_t len = keep_alive ? sizeof(CONNECTION_KEEP_ALIVE) - 1 : sizeof(CONNECTION_CLOSE) - 1;
+    if (len > cap) return -1;
+    memcpy(write_buf, h, len);
+    return (int)len;
 }
+
 
 ssize_t response_serialize(const HttpResponse * resp, char * buffer, const size_t buffer_size, const int keep_alive) {
     ssize_t offset = 0;
@@ -61,26 +68,54 @@ ssize_t response_serialize(const HttpResponse * resp, char * buffer, const size_
         if (ascii_ieq(resp->headers[i].key, "content-length")) saw_content_length = 1;
     }
 
-    if (!saw_content_length && resp->body_len > 0) {
-        written = snprintf(buffer + offset, buffer_size - offset,
-            "Content-Length: %zu\r\n", resp->body_len);
-        if (written < 0 || (size_t)written >= buffer_size - offset) return -1;
-        offset += written;
-    }
-
     written = response_header_connection_write(buffer + offset, buffer_size - offset, keep_alive);
     if (written < 0 || (size_t)written >= buffer_size - offset) return -1;
     offset += written;
 
-    // Blank line
-    if (offset + 2 >= buffer_size) return -1;
-    buffer[offset++] = '\r'; buffer[offset++] = '\n';
+    switch (resp->kind) {
+        case BODY_BUFFER: {
+            if (!saw_content_length && resp->body.body_buf.size > 0) {
+                written = snprintf(buffer + offset, buffer_size - offset,
+                    "Content-Length: %zu\r\n", resp->body.body_buf.size);
+                if (written < 0 || (size_t)written >= buffer_size - offset) return -1;
+                offset += written;
+            }
 
-    // Body
-    if (!resp->head_only && resp->body && resp->body_len > 0) {
-        if (offset + resp->body_len > buffer_size) return -1;
-        memcpy(buffer + offset, resp->body, resp->body_len);
-        offset += resp->body_len;
+            // Blank line
+            if (offset + 2 >= buffer_size) return -1;
+            buffer[offset++] = '\r'; buffer[offset++] = '\n';
+
+            // Body
+            if (!resp->head_only && resp->body.body_buf.buffer && resp->body.body_buf.size > 0) {
+                if (offset + resp->body.body_buf.size > buffer_size) return -1;
+                memcpy(buffer + offset, resp->body.body_buf.buffer, resp->body.body_buf.size);
+                offset += resp->body.body_buf.size;
+            }
+
+            break;
+        }
+
+        case BODY_NONE: {
+            // Blank line
+            if (offset + 2 >= buffer_size) return -1;
+            buffer[offset++] = '\r'; buffer[offset++] = '\n';
+            break;
+        }
+
+        case BODY_STREAM: {
+            const size_t len = sizeof(TRANSFER_ENCODING_CHUNKED) - 1; // omit the \0
+
+            if (offset + len > buffer_size) return -1;
+            memcpy(buffer + offset, TRANSFER_ENCODING_CHUNKED, len);
+            offset += (ssize_t)len;
+
+            // blank line
+            if (offset + 2 >= buffer_size) return -1;
+            buffer[offset++] = '\r'; buffer[offset++] = '\n';
+            break;
+        }
+
+        default: return -1;
     }
 
     return offset; // total bytes written
@@ -112,35 +147,28 @@ SendReponseStatus response_send(const int fd, const HttpBuffer * resp, SendSt * 
     return res;
 }
 
-HttpResponse response_error_from_status(const ParseStatus s) {
-    static const HttpResponse r400 = { .status = 400, .reason = "Bad Request",
-                                       .body = "Bad Request", .body_len = 11 };
-    static const HttpResponse r413 = { .status = 413, .reason = "Payload Too Large",
-                                       .body = "Payload too large", .body_len = 17 };
-    static const HttpResponse r414 = { .status = 414, .reason = "URI Too Long",
-                                       .body = "URI Too Long", .body_len = 12 };
-    static const HttpResponse r431 = { .status = 431, .reason = "Request Header Fields Too Large",
-                                       .body = "Request Header Fields Too Large", .body_len = 31 };
-    static const HttpResponse r500 = { .status = 500, .reason = "Internal Server Error",
-                                       .body = "Internal Server Error", .body_len = 21 };
-    static const HttpResponse r501 = { .status = 501, .reason = "Not Implemented",
-                                       .body = "Not Implemented", .body_len = 15 };
-    static const HttpResponse r505 = { .status = 505, .reason = "HTTP Version Not Supported",
-                                       .body = "HTTP Version Not Supported", .body_len = 26 };
-    static const HttpResponse r404 = { .status = 404, .reason = "Not Found",
-                                       .body = "Not Found", .body_len = 9 };
+#define R_400 "Bad Request"
+#define R_404 "Not Found"
+#define R_405 "Method Not Allowed"
+#define R_413 "Payload Too Large"
+#define R_414 "URI Too Long"
+#define R_431 "Request Header Fields Too Large"
+#define R_500 "Internal Server Error"
+#define R_501 "Not Implemented"
+#define R_505 "HTTP Version Not Supported"
 
+HttpResponse response_error_from_status(const ParseStatus s) {
     switch (s) {
-        case PARSE_BAD_REQUEST:           return r400;
-        case PARSE_PAYLOAD_TOO_LARGE:     return r413;
-        case PARSE_URI_TOO_LONG:          return r414;
+        case PARSE_BAD_REQUEST:           return response_buffer(400, R_400, R_400, sizeof R_400, NULL, 0);
+        case PARSE_PAYLOAD_TOO_LARGE:     return response_buffer(413, R_413, R_413, sizeof R_413, NULL, 0);
+        case PARSE_URI_TOO_LONG:          return response_buffer(414, R_414, R_414, sizeof R_414, NULL, 0);
         case PARSE_HEADER_KEY_TOO_LONG:
         case PARSE_HEADER_VALUE_TOO_LONG:
-        case PARSE_HEADER_TOO_LONG:       return r431;
-        case PARSE_NOT_IMPLEMENTED:       return r501;
-        case PARSE_VERSION_NOT_SUPPORTED: return r505;
-        case PARSE_NOT_FOUND:             return r404;
-        default:                          return r500;
+        case PARSE_HEADER_TOO_LONG:       return response_buffer(431, R_431, R_431, sizeof R_431, NULL, 0);
+        case PARSE_NOT_IMPLEMENTED:       return response_buffer(501, R_501, R_501, sizeof R_501, NULL, 0);
+        case PARSE_VERSION_NOT_SUPPORTED: return response_buffer(505, R_505, R_505, sizeof R_505, NULL, 0);
+        case PARSE_NOT_FOUND:             return response_buffer(404, R_404, R_404, sizeof R_404, NULL, 0);
+        default:                          return response_buffer(500, R_500, R_500, sizeof R_500, NULL, 0);
     }
 }
 
@@ -151,15 +179,65 @@ HttpResponse response_error_405(const char * const *allowed, const size_t allowe
     }
     h->key = "Allow";
     h->value = allow_buf->buffer;
-    return (HttpResponse) {
-        .status = 405,                .reason = "Method Not Allowed",
-        .body = "Method Not Allowed", .body_len = 18,
-        .headers = h,                 .header_count = 1
-    };
+    return response_buffer(405, R_405, R_405, sizeof R_405, h, 1);
 }
 
 void response_error_serialize(HttpBuffer * resp, const ParseStatus s) {
     const HttpResponse res = response_error_from_status(s);
+
     // error responses generally close, so keep-alive is set to 0
     resp->size = response_serialize(&res, resp->buffer, resp->cap, 0);
+}
+
+HttpResponse response_none(const int status, const char *reason, const ResponseHeader *headers,
+                           const size_t header_count) {
+    return (HttpResponse){
+        .status = status, .reason = reason,
+        .headers = headers, .header_count = header_count,
+        .kind = BODY_NONE,
+    };
+}
+
+HttpResponse response_buffer(const int status, const char *reason, const char *body, const size_t len,
+                             const ResponseHeader *headers, const size_t header_count) {
+    return (HttpResponse){
+        .status = status, .reason = reason,
+        .headers = headers, .header_count = header_count,
+        .kind = BODY_BUFFER, .body.body_buf = (HttpBuffer){
+            .buffer = (char *) body,
+            .size = len,
+            .cap = len,
+        }
+    };
+}
+
+HttpResponse response_stream(const int status, const char *reason,
+                             ssize_t (*pull)(void *ctx, char *out, size_t cap),
+                             void *ctx, void (*cleanup)(void *ctx),
+                             const ResponseHeader * headers, const size_t header_count) {
+    return (HttpResponse) {
+        .status = status, .reason = reason,
+        .headers = headers, .header_count = header_count,
+        .kind = BODY_STREAM, .body.stream = (Stream) {
+           .ctx = ctx,
+            .pull = pull,
+            .cleanup = cleanup,
+        }
+    };
+}
+
+ssize_t chunk_frame(const char * payload, const size_t len, char * out, const size_t out_cap) {
+    const int n = snprintf(out, out_cap, "%zx\r\n", len); // hex size
+    if (n < 0 || (size_t)n >= out_cap) return -1; // truncated snprintf or errored
+    if ((size_t)n + len + 2 > out_cap) return -1; // payload + trailing CRLF won't fit
+    memcpy(out + n, payload, len);
+    out[n + len] = '\r';
+    out[n + len + 1] = '\n';
+    return (ssize_t)(n + len + 2);
+}
+
+ssize_t chunk_frame_last (char * out, const size_t out_cap) {
+    if (out_cap < 5) return -1;
+    memcpy(out, "0\r\n\r\n", 5);
+    return 5;
 }

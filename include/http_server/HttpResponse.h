@@ -4,7 +4,9 @@
 
 #ifndef HTTPSERVER_HEADER_H
 #define HTTPSERVER_HEADER_H
-#define RESPONSE_BUFFER_SIZE (128 * 1024 * 1024)
+#define RESPONSE_BUFFER_SIZE (8 * 1024) // 8kb
+#define STREAM_CHUNK_SIZE (4 * 1024) // 4kb
+
 #include <stdio.h>
 #include "HttpRequest.h"
 #include "HttpBuffer.h"
@@ -15,13 +17,24 @@ typedef struct {
     const char *value;
 } ResponseHeader;
 
+typedef enum { BODY_NONE, BODY_BUFFER, BODY_STREAM } BodyKind;
+
+typedef struct {
+    void *ctx;
+    ssize_t (*pull)(void * ctx, char * out, size_t cap);
+    void (*cleanup)(void * ctx);
+} Stream;
+
 typedef struct {
     int status;                    // 200, 404, 500
     const char *reason;            // "OK", "Not Found", etc.
     const ResponseHeader *headers; // caller-owned, usually static
     size_t header_count;
-    const char *body;             // body bytes, may be NULL
-    size_t body_len;
+    union {
+        HttpBuffer body_buf;
+        Stream stream;
+    } body;
+    BodyKind kind;
     int head_only;
 } HttpResponse;
 
@@ -34,6 +47,21 @@ typedef enum {
 
 // Per-phase state for a response send (partial-write cursor).
 typedef struct { size_t sent; } SendSt;
+
+typedef enum {
+    STREAM_HEADER,  // drain serialized status line + headers
+    STREAM_PULL,    // call producer, frame size\r\n...payload...\r\n into staging buf
+    STREAM_DRAIN,   // send() the framed chunk; loop back to PULL when drained
+    STREAM_TRAILER, // drain 0\r\n\r\n
+    STREAM_DONE
+} StreamPhase;
+
+typedef enum { STREAM_ABORT, STREAM_YIELD, STREAM_ADVANCE } StreamStep;
+
+typedef struct {
+    StreamPhase phase;
+    SendSt send;
+} SendStreamSt;
 
 /**
  * Serialize `resp` into the wire format (status line + headers + body) at `buffer`.
@@ -53,7 +81,7 @@ ssize_t response_serialize(const HttpResponse * resp, char * buffer, size_t buff
  *
  * @param fd    connection file descriptor (non-blocking, MSG_NOSIGNAL-aware)
  * @param resp  fully-serialized response buffer
- * @param st    in/out per-phase scratch (sent-byte cursor)
+ * @param st    in/out per-phase state (sent-byte cursor)
  * @return      SEND_OK / SEND_HAS_MORE / SEND_PEER_CLOSED / SEND_ERROR
  */
 SendReponseStatus response_send(int fd, const HttpBuffer * resp, SendSt * st);
@@ -85,5 +113,21 @@ HttpResponse response_error_405(const char * const *allowed, size_t allowed_coun
  * @param s     parse status driving the error response
  */
 void response_error_serialize(HttpBuffer * resp, ParseStatus s);
+
+HttpResponse response_none(int status, const char *reason, const ResponseHeader * headers, size_t header_count);
+
+HttpResponse response_buffer(int status, const char *reason,
+                             const char *body, size_t len,
+                             const ResponseHeader * headers, size_t header_count);
+
+HttpResponse response_stream(int status, const char *reason,
+                             ssize_t (*pull)(void *ctx, char *out, size_t cap),
+                             void *ctx, void (*cleanup)(void *ctx),
+                             const ResponseHeader * headers, size_t header_count);
+
+ssize_t chunk_frame(const char * payload, size_t len, char * out, size_t out_cap);
+
+ssize_t chunk_frame_last (char * out, size_t out_cap);
+
 
 #endif //HTTPSERVER_HEADER_H
