@@ -88,7 +88,7 @@ typedef struct {
 RouteLookupResult route_lookup(const Route routes[], size_t count, const char *method, const char *path);
 
 /**
- * @return  freshly-allocated content cache; caller frees with content_cache_free()
+ * @return  freshly-allocated content cache; caller frees with content_registry_free()
  */
 ContentRegistry *content_registry_create();
 
@@ -112,12 +112,18 @@ char *content_type(const char *path);
 HttpResponse response_resident(const HttpRequest *req, const ContentEntry *file);
 
 /**
- * Re-stats the backing file and returns DYN_NOT_REGISTERED / DYN_GONE /
- * DYN_NOT_MODIFIED / DYN_HIT. On DYN_HIT the cache entry holds the current body.
+ * Resolve `url_path` in the registry and classify the result:
+ *   CONTENT_MISS:         not registered, caller falls through to routes.
+ *   CONTENT_GONE:         registered but the backing file stat() failed (404).
+ *   CONTENT_NOT_MODIFIED: a dynamic entry whose validators match the request (304).
+ *   CONTENT_HIT:          serve the entry. On HIT it holds the current body.
+ * Dynamic-resident entries are re-stat'd here and reloaded if the file changed;
+ * static and streamed entries resolve straight to HIT.
  *
- * @param registry     dynamic cache
+ * @param registry  content registry
  * @param req       originating request (used for If-None-Match / If-Modified-Since)
  * @param url_path  URL key
+ * @return          lookup result; entry is valid for CONTENT_NOT_MODIFIED and CONTENT_HIT
  */
 ContentLookupResult content_registry_lookup(ContentRegistry *registry, const HttpRequest *req, const char *url_path);
 
@@ -144,8 +150,37 @@ int router_has_duplicate_routes(const Router *router);
  */
 HttpResponse response_for_entry(const HttpRequest * req, const ContentEntry * entry);
 
+/**
+ * Register a single file under `url`, choosing its caching and delivery
+ * behavior via `mode`:
+ *   SERVE_STATIC_RESIDENT: body read into the entry once, never revalidated.
+ *   SERVE_DYN_RESIDENT:    body read into the entry, re-stat'd per request,
+ *                          reloaded if it changed; carries ETag/Last-Modified.
+ *   SERVE_DYN_STREAMED:    no body stored; the file is reopened and pumped in
+ *                          chunks at request time. Omits Content-Length, since
+ *                          streamed bodies are sent with chunked transfer-encoding.
+ *
+ * @param cache    destination registry
+ * @param fs_path  filesystem path of the source file
+ * @param url      URL key the file is served under (NUL-terminated)
+ * @param mode     caching/delivery behavior (see above)
+ * @return         1 on success, 0 on stat or allocation failure
+ */
 int content_registry_add_file(ContentRegistry * cache, const char * fs_path, const char * url, ServeMode mode);
 
+/**
+ * Walk `dir_path` and register every regular file under `url_prefix` with the
+ * given `mode`, delegating each file to content_registry_add_file(). Hidden
+ * files (leading '.') and non-regular entries are skipped. A file named
+ * "index.html" is additionally registered at "/".
+ *
+ * @param cache       destination registry
+ * @param dir_path    filesystem directory to walk
+ * @param url_prefix  URL prefix prepended to each entry; may be NULL for "/"
+ * @param mode        caching/delivery behavior applied to every file (see
+ *                    content_registry_add_file)
+ * @return            count of files registered (0 if the directory cannot be opened)
+ */
 int content_registry_add_dir(ContentRegistry * cache, const char * dir_path, const char * url_prefix, ServeMode mode);
 
 #endif //HTTPSERVER_HTTPROUTER_H

@@ -192,7 +192,7 @@ HttpResponse response_streamed(const ContentEntry * file) {
     const Stream s = file_stream_open(file->reval->fs_path);
     if (!s.pull) return response_error_from_status(PARSE_SERVER_ERROR);
 
-    // 4 is the number of headers we set when in streaming mode, see serve_file below.
+    // 4 is the number of headers we set when in streaming mode, see content_registry_add_dir below.
     return response_stream(200, "OK", s.pull, s.ctx, s.cleanup, file->headers, 4);
 }
 
