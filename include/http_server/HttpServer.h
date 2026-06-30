@@ -10,7 +10,6 @@
 
 /*
  * Known HTTP/1.1 compliance gaps:
- *   - Chunked Transfer-Encoding only supported in requests, not responses
  *   - Absolute-form request targets (GET http://host/path) not parsed; affects proxy use
  *   - Chunked trailer fields not supported (RFC 9112 §7.1.2)
  */
