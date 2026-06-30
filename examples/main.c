@@ -55,7 +55,7 @@ int main(const int argc, char *argv[]) {
         .routes = routes
     };
 
-    static_dir_cache(router.registry, "wwwroot", NULL);
+    content_registry_add_dir(router.registry, "wwwroot-wasm", NULL, SERVE_DYN_STREAMED);
 
     server_run(argv[1], &router, BACKLOG);
 

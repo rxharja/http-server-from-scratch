@@ -115,41 +115,6 @@ static ContentEntry *content_entry_dynamic_load(const char *url_path, const char
     return d;
 }
 
-// won't work on esp32 as there is no fs, todo: set a compilation flag
-int static_dir_cache(ContentRegistry * cache, const char * dir_path, const char * url_prefix) {
-    struct dirent *de;  // Pointer for directory entry
-    DIR *dr = opendir(dir_path); // Open current directory
-    if (dr == NULL) {
-        printf("Could not open current directory");
-        return 0;
-    }
-
-    int f_count = 0;
-    while ((de = readdir(dr)) != NULL) {
-        if (de->d_name[0] == '.') continue; // Skip hidden files and navigation directories
-        if (de->d_type != DT_REG) continue; // Only process regular files
-
-        char url[512];
-        char fpath[512];
-
-        if (url_prefix) snprintf(url, sizeof(url), "%s/%s", url_prefix, de->d_name);
-        else snprintf(url, sizeof(url), "/%s", de->d_name);
-
-        snprintf(fpath, sizeof(fpath), "%s/%s", dir_path, de->d_name);
-
-        ContentEntry * file = content_entry_static_load(url, fpath);
-
-        if (file) {
-            dict_insert(cache, url, file);
-            if (strcmp("index.html", de->d_name) == 0) dict_insert(cache, "/", file);
-            f_count++;
-        }
-    }
-
-    closedir(dr);
-    return f_count;
-}
-
 void content_registry_free(ContentRegistry * cache) {
     // pass 'free' because CachedFile is a single allocation
     // flexible array member 'data' is freed along with the struct
@@ -211,6 +176,7 @@ static void file_close(void * ctx) {
 static Stream file_stream_open(const char * fs_path) {
     const int fd = open(fs_path, O_RDONLY | O_CLOEXEC);
     if (fd < 0) return (Stream){0};
+
     // NOLINTNEXTLINE(clang-analyzer-unix.Malloc): ownership transfers to Stream.ctx, freed in file_close
     FileCtx * c = malloc(sizeof *c);
     if (!c) { close(fd); return (Stream){0}; }
@@ -226,7 +192,7 @@ HttpResponse response_streamed(const ContentEntry * file) {
     const Stream s = file_stream_open(file->reval->fs_path);
     if (!s.pull) return response_error_from_status(PARSE_SERVER_ERROR);
 
-    // 4 is the number of headers we set when in streaming mode, see serve_file belowprovide.
+    // 4 is the number of headers we set when in streaming mode, see serve_file below.
     return response_stream(200, "OK", s.pull, s.ctx, s.cleanup, file->headers, 4);
 }
 
@@ -321,11 +287,7 @@ HttpResponse response_for_entry(const HttpRequest * req, const ContentEntry * en
     return response_error_from_status(PARSE_SERVER_ERROR);
 }
 
-int serve_dir(ContentRegistry * cache, const char * dir_path, const char * url_prefix, ServeMode mode) {
-
-}
-
-int serve_file(ContentRegistry * cache, const char * fs_path, const char * url, const ServeMode mode) {
+int content_registry_add_file(ContentRegistry * cache, const char * fs_path, const char * url, const ServeMode mode) {
     struct stat st;
     if (stat(fs_path, &st) != 0) return 0;
 
@@ -365,4 +327,38 @@ int serve_file(ContentRegistry * cache, const char * fs_path, const char * url, 
     }
 
     return 0;
+}
+
+int content_registry_add_dir(ContentRegistry * cache, const char * dir_path, const char * url_prefix, const ServeMode mode) {
+    struct dirent *de;  // Pointer for directory entry
+    DIR *dr = opendir(dir_path); // Open current directory
+    if (dr == NULL) {
+        printf("Could not open current directory");
+        return 0;
+    }
+
+    int f_count = 0;
+    while ((de = readdir(dr)) != NULL) {
+        if (de->d_name[0] == '.') continue; // Skip hidden files and navigation directories
+        if (de->d_type != DT_REG) continue; // Only process regular files
+
+        char url[512];
+        char fpath[512];
+
+        if (url_prefix) snprintf(url, sizeof(url), "%s/%s", url_prefix, de->d_name);
+        else snprintf(url, sizeof(url), "/%s", de->d_name);
+
+        snprintf(fpath, sizeof(fpath), "%s/%s", dir_path, de->d_name);
+
+        f_count += content_registry_add_file(cache, fpath, url, mode);
+
+        // alternate version commented out below. It reduces the amount of memory used but at the cost of some
+        // resilience. Freeing /index.html will also free entry and entry->reval twice.
+        //if (strcmp("index.html", de->d_name) == 0) dict_insert(cache, "/", dict_find(cache, "/index.html"));
+
+        if (strcmp("index.html", de->d_name) == 0) content_registry_add_file(cache, fpath, "/", mode);
+    }
+
+    closedir(dr);
+    return f_count;
 }

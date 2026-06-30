@@ -93,25 +93,6 @@ RouteLookupResult route_lookup(const Route routes[], size_t count, const char *m
 ContentRegistry *content_registry_create();
 
 /**
- * Walk `dir_path` and cache every regular file under `url_prefix`. Cached files
- * are served statically without re-stat.
- *
- * @param cache       destination cache
- * @param dir_path    filesystem directory to walk
- * @param url_prefix  URL prefix prepended to each cached path; may be NULL for "/"
- * @return            0 on success, non-zero on I/O error
- */
-int static_dir_cache(ContentRegistry *cache, const char *dir_path, const char *url_prefix);
-
-/**
- * @param cache     destination cache
- * @param url_path  URL key (NUL-terminated)
- * @param file      cached entry; ownership transfers to the cache
- * @return          0 on success, non-zero on allocation failure
- */
-int cache_file(ContentRegistry *cache, const char *url_path, ContentEntry *file);
-
-/**
  * @param cache  cache to free; safe to pass NULL
  */
 void content_registry_free(ContentRegistry *cache);
@@ -162,5 +143,9 @@ int router_has_duplicate_routes(const Router *router);
  * @return HttpResponse based on the entry's mode
  */
 HttpResponse response_for_entry(const HttpRequest * req, const ContentEntry * entry);
+
+int content_registry_add_file(ContentRegistry * cache, const char * fs_path, const char * url, ServeMode mode);
+
+int content_registry_add_dir(ContentRegistry * cache, const char * dir_path, const char * url_prefix, ServeMode mode);
 
 #endif //HTTPSERVER_HTTPROUTER_H
