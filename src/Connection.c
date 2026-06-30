@@ -299,9 +299,6 @@ static ConnPhase step_response_build(Connection * conn, const Router * router) {
     const HttpMethod method = conn->req_parsed.request_line.method == HEAD ? GET : conn->req_parsed.request_line.method;
 
     if (method == GET) {
-        const ContentEntry * sf = dict_find(router->registry, req->request_line.path);
-        if (sf) { res = response_for_entry(&conn->req_parsed, sf); goto build_resp; }
-
         const ContentLookupResult d = content_registry_lookup(router->registry, req, req->request_line.path);
 
         switch (d.status) {
