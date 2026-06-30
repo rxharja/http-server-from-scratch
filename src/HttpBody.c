@@ -99,11 +99,11 @@ ReadBodyResult conn_recv_body_chunked(const int fd, HttpBuffer *req_buf, const s
             }
 
             if (cr.parse_result.status == PARSE_INCOMPLETE) break;   // need more wire bytes
-            // PARSE_OK but not DONE: more might be buffered — loop and try again
+            // PARSE_OK but not DONE: more might be buffered. loop and try again
         }
 
         // PARSE_INCOMPLETE: need to recv more. If the buffer is already full,
-        // a single header line is wider than req_buf — surface as 413.
+        // a single header line is wider than req_buf: surface as 413.
         if (req_buf->size >= req_buf->cap) { res.status = READ_BODY_TOO_LARGE; return res; }
 
         const ssize_t got = recv(fd, req_buf->buffer + req_buf->size, req_buf->cap - req_buf->size, 0);
@@ -283,7 +283,7 @@ ParseStatus transfer_encoding_parse(const char *val, TransferCoding *coding) {
             // Empty coding name (e.g., ";param=value" with no token in front) → malformed.
             if (name_len == 0) return PARSE_BAD_REQUEST;
 
-            // RFC 9110 §5.6.2 — coding name must be a token (1*tchar).
+            // RFC 9110 §5.6.2: coding name must be a token (1*tchar).
             if (!is_token(tok_start, name_len)) return PARSE_BAD_REQUEST;
 
             if (eq_chunked(tok_start, name_len)) {

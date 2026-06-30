@@ -33,8 +33,14 @@ target_link_libraries(example_server PRIVATE HttpServer)
 
 # === Tests ===
 # Tests need private headers (Connection.h, parser.h, etc.), so we grant
-# them access to src/ explicitly. This is a deliberate exception — only
+# them access to src/ explicitly. This is a deliberate exception, only
 # in-tree tests get to peek behind the library's public API.
-add_executable(HttpServerTests tests/ParserTests.c)
+add_executable(HttpServerTests
+        tests/test_harness.c
+        tests/RequestTests.c
+        tests/BodyTests.c
+        tests/ResponseTests.c
+        tests/StreamTests.c
+)
 target_link_libraries(HttpServerTests PRIVATE HttpServer)
 target_include_directories(HttpServerTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

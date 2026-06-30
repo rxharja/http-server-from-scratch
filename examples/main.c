@@ -12,7 +12,8 @@ static HttpResponse not_found(const HttpRequest * request) {
     static const HttpResponse response = {
         .status = 404, .reason = "Not Found",
         .headers = h,  .header_count = 1,
-        .body = body,  .body_len = sizeof body - 1
+        .kind = BODY_BUFFER,
+        .body.body_buf = (HttpBuffer) { .buffer = (char*)body, .size = sizeof body - 1, .cap = sizeof body - 1 }
     };
     return response;
 }
@@ -22,12 +23,13 @@ static HttpResponse do_something(const HttpRequest * request) {
     HttpResponse response = {
         .status = 200, .reason = "OK",
         .headers = h,  .header_count = 1,
-        .body_len = request->body_len,
+        .kind = BODY_BUFFER,
+        .body.body_buf = (HttpBuffer) { .buffer = NULL, .size = request->body_len, .cap = request->body_len }
     };
     char *body_buf = malloc(request->body_len);
     // todo: currently the OS reclaims the heap by the process ending
     memcpy(body_buf, request->body, request->body_len);
-    response.body = body_buf;
+    response.body.body_buf.buffer = body_buf;
     return response;
 }
 
@@ -48,16 +50,16 @@ int main(const int argc, char *argv[]) {
     };
 
     const Router router = {
-        .static_cache = content_cache_create(),
+        .registry = content_registry_create(),
         .route_count = 2,
         .routes = routes
     };
 
-    static_dir_cache(router.static_cache, "wwwroot", NULL);
+    content_registry_add_dir(router.registry, "wwwroot-wasm", NULL, SERVE_DYN_STREAMED);
 
     server_run(argv[1], &router, BACKLOG);
 
-    content_cache_free(router.static_cache);
+    content_registry_free(router.registry);
 
     return EXIT_SUCCESS;
 }

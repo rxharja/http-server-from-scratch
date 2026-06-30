@@ -30,10 +30,13 @@ static short conn_phase_event(const ConnPhase phase) {
     switch (phase) {
         case CONN_READING_REQUEST:
         case CONN_READING_BODY_CL:
-        case CONN_READING_BODY_CHUNKED:  return POLLIN;
-        case CONN_SENDING_RESPONSE:      return POLLOUT;
-        case CONN_CLOSED:                return 0; // about to remove from set
-        default: assert(0); return 0;
+        case CONN_READING_BODY_CHUNKED:    return POLLIN;
+
+        case CONN_SENDING_RESPONSE:
+        case CONN_SENDING_RESPONSE_STREAM: return POLLOUT;
+
+        case CONN_CLOSED:                  return 0; // about to remove from set
+        default:                           assert(0); return 0;
     }
 
     return 0;
@@ -85,7 +88,6 @@ int server_run(const char * port, const Router * router, const size_t backlog) {
         for(int i = 1; i < client_set.fd_count; i++) {
             struct pollfd * poll_fd = &client_set.poll_fd_set[i];
             if (!(poll_fd->revents & (POLLIN | POLLHUP | POLLOUT))) continue;
-
             Connection * conn = &client_set.conns[i];
             connection_step_process(conn, router);
             poll_fd->events = conn_phase_event(conn->phase);

@@ -37,6 +37,7 @@ typedef enum {
     CONN_SENDING_100, // 100-continue
     CONN_BUILDING,
     CONN_SENDING_RESPONSE,
+    CONN_SENDING_RESPONSE_STREAM,
     CONN_CLOSED
 } ConnPhase;
 
@@ -51,17 +52,19 @@ typedef struct {
     size_t body_start;
     size_t body_len;            // for Content-Length
     TransferCoding body_coding; // for Transfer-Encoding: Chunked
+    Stream producer;
     size_t next_req_offset;
     size_t requests;
     union {
         CLBodySt cl;
         ChunkedBodySt chunked;
         SendSt send;
+        SendStreamSt stream;
     } st;
 } Connection;
 
 ReadHeaderResult conn_recv_header(int fd, HttpBuffer * req);
 
-KeepAliveStatus connection_step_process(Connection * conn, const Router * router);
+void connection_step_process(Connection * conn, const Router * router);
 
 #endif //HTTPSERVER_CONNECTION_H
