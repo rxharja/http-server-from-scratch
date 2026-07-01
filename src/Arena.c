@@ -6,6 +6,10 @@
 #include <stdint.h>
 #include "http_server/Arena.h"
 
+// convenience macros for common typed case so callers don't hand-write sizeof/_Alignof
+#define arena_new(a, T)      ((T *)arena_alloc((a), sizeof(T), _Alignof(T)))
+#define arena_array(a, T, k) ((T *)arena_alloc((a), sizeof(T) * (k), _Alignof(T)))
+
 void arena_init(Arena * arena, uint8_t * mem, const size_t cap) {
    arena->base = mem;
    arena->cap = cap;
