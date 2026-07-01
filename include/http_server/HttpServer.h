@@ -5,8 +5,7 @@
 #ifndef HTTPSERVER_HTTPSERVER_H
 #define HTTPSERVER_HTTPSERVER_H
 #include "HttpRouter.h"
-
-#define MAX_REQUESTS 100
+#include "Config.h"
 
 /*
  * Known HTTP/1.1 compliance gaps:

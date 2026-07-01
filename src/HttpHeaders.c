@@ -19,7 +19,7 @@ ParseResult header_key_parse(const char * cur, const char * end, Header * header
     while (cur < end) {
         if (!is_tchar(*cur)) return res;
 
-        if (count >= MAX_HEADER_KEY_LEN - 1) { // account for \0
+        if (count >= HTTP_MAX_HEADER_KEY_LEN - 1) { // account for \0
             parse_error_set(&res, PARSE_HEADER_KEY_TOO_LONG, cur);
             return res;
         }
@@ -38,7 +38,7 @@ ParseResult header_value_parse(const char * cur, const char * end, Header * head
     ParseResult res = {0};
     parse_error_set(&res, PARSE_BAD_REQUEST, cur);
 
-    if (end - cur > MAX_HEADER_VALUE_LEN - 1) { // account for \0
+    if (end - cur > HTTP_MAX_HEADER_VALUE_LEN - 1) { // account for \0
         parse_error_set(&res, PARSE_HEADER_VALUE_TOO_LONG, cur);
         return res;
     }
@@ -74,7 +74,7 @@ ParseResult header_line_parse(const char * cur, const char * end, Header * heade
     res = header_value_parse(res.next, end, &header); // end points to crlf
     if (res.status != PARSE_OK) return res;
 
-    if (*count >= MAX_HEADERS) {
+    if (*count >= HTTP_MAX_HEADERS) {
         parse_error_set(&res, PARSE_HEADER_TOO_LONG, cur);
         return res;
     }

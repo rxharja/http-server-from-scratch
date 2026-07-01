@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 3.28)
 project(HttpServer C)
 
 set(CMAKE_C_STANDARD 11)
@@ -20,6 +20,7 @@ add_library(HttpServer STATIC
         src/Dictionary.c
         src/Networking.c
         src/Networking.h
+        include/http_server/Config.h
 )
 
 target_include_directories(HttpServer
@@ -41,6 +42,7 @@ add_executable(HttpServerTests
         tests/BodyTests.c
         tests/ResponseTests.c
         tests/StreamTests.c
+        include/http_server/Config.h
 )
 target_link_libraries(HttpServerTests PRIVATE HttpServer)
 target_include_directories(HttpServerTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

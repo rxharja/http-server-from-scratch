@@ -8,10 +8,7 @@
 #include <sys/types.h>
 #include "ParseResult.h"
 #include "HttpBuffer.h"
-
-#define MAX_BODY_LEN (1 * 1024 * 1000)
-#define MAX_DECHUNK_SIZE (16 * 1024)
-#define CHUNK_LINE_SIZE 64
+#include "Config.h"
 
 typedef enum {
     TE_NONE,         // header absent
@@ -31,7 +28,7 @@ typedef enum {
 typedef struct {
     ChunkedPhase phase;
     size_t remaining; // stores the chunk size
-    // char line_buf[CHUNK_LINE_SIZE]; // these will be re-added when streaming is supported
+    // char line_buf[HTTP_CHUNK_LINE_SIZE]; // these will be re-added when streaming is supported
     // size_t line_len;
 } ChunkDecoder;
 
@@ -64,7 +61,7 @@ typedef struct {
 } ChunkedBodySt;
 
 /**
- * Parse a Content-Length header value (base-10, capped at MAX_BODY_LEN).
+ * Parse a Content-Length header value (base-10, capped at HTTP_MAX_BODY_LEN).
  *
  * @param val  NUL-terminated header value (OWS-stripped by the header parser)
  * @param out  parsed length on PARSE_OK

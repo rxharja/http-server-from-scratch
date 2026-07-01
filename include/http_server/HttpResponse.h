@@ -4,13 +4,12 @@
 
 #ifndef HTTPSERVER_HEADER_H
 #define HTTPSERVER_HEADER_H
-#define RESPONSE_BUFFER_SIZE (8 * 1024) // 8kb
-#define STREAM_CHUNK_SIZE (4 * 1024) // 4kb
 
 #include <stdio.h>
 #include "HttpRequest.h"
 #include "HttpBuffer.h"
 #include "ParseResult.h"
+#include "Config.h"
 
 typedef struct {
     const char *key;
