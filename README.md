@@ -112,6 +112,43 @@ target_link_libraries(myapp PRIVATE HttpServer)
 `HttpServer`'s `PUBLIC` include directories propagate automatically, so `myapp`
 can `#include <http_server/HttpServer.h>` without any further configuration.
 
+## Configuration
+
+Every buffer size and protocol limit is a compile-time knob, collected in one
+place: [`include/http_server/Config.h`](include/http_server/Config.h). Each is
+`#ifndef`-guarded, so you override any of them without editing the file — either
+on the compiler command line or by defining it before including any
+`http_server` header:
+
+```sh
+cc -DHTTP_MAX_HEADERS=16 -DHTTP_MAX_BODY_LEN=8192 ...
+```
+
+```cmake
+add_compile_definitions(HTTP_MAX_HEADERS=16 HTTP_MAX_BODY_LEN=8192)
+```
+
+The defaults target POSIX systems with generous memory; constrained targets
+(e.g. ESP32-class hardware) will want to shrink most of them.
+
+| Macro                       | Default | Governs                                            |
+| --------------------------- | ------: | -------------------------------------------------- |
+| `HTTP_MAX_PATH_LEN`         |    2048 | Request path bytes                                 |
+| `HTTP_MAX_QUERY_LEN`        |     512 | Query-string bytes                                 |
+| `HTTP_MAX_REQUEST_LEN`      |    8 MiB | Total received request bytes (line + headers + body) |
+| `HTTP_MAX_HEADERS`          |      32 | Header lines per request                           |
+| `HTTP_MAX_HEADER_KEY_LEN`   |      64 | Header name bytes                                  |
+| `HTTP_MAX_HEADER_VALUE_LEN` |     256 | Header value bytes                                 |
+| `HTTP_MAX_BODY_LEN`         |   ~1 MiB | Request body / Content-Length cap                  |
+| `HTTP_MAX_DECHUNK_SIZE`     |   16 KiB | Decoded chunked-body payload cap                   |
+| `HTTP_RESPONSE_BUFFER_SIZE` |    8 KiB | Per-connection response / stream staging buffer    |
+| `HTTP_STREAM_CHUNK_SIZE`    |    4 KiB | Bytes pulled from a stream producer per iteration  |
+| `HTTP_MAX_REQUESTS`         |     100 | Requests served per keep-alive connection          |
+| `HTTP_BUCKET`               |    1024 | Content-registry hash-table bucket count           |
+
+(`HTTP_VERSION_LEN` and `HTTP_CHUNK_LINE_SIZE` are also in `Config.h` but are
+protocol-fixed, not tuning knobs.)
+
 ## Project layout
 
 ```
@@ -137,9 +174,10 @@ The current implementation targets POSIX systems with generous memory budgets
 (the response buffer is 128 MB per connection, headers up to 8 MB). Embedded
 deployment is planned, and would require:
 
-- **Buffer sizing.** Make every `*_MAX_*` and buffer-size macro tunable at compile
-  time, and move `HttpRequest::body` out of the struct so a parsed request isn't
-  a megabyte.
+- **Buffer sizing.** Every `*_MAX_*` and buffer-size macro is now tunable at
+  compile time via [`Config.h`](include/http_server/Config.h) (see
+  [Configuration](#configuration)). Still to do: move `HttpRequest::body` out of
+  the struct so a parsed request isn't a megabyte.
 - **Allocation strategy.** Replace per-request `malloc()` with either fully
   static buffers or a per-connection arena allocator, to avoid heap fragmentation
   on long-running devices. The arena variant also gives consumer handlers a

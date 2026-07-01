@@ -7,15 +7,11 @@
 
 #include <stddef.h>
 #include "ParseResult.h"
-
-#define MAX_HEADERS 32
-#define MAX_HEADER_LEN (1024 * 1024 * 8)
-#define MAX_HEADER_KEY_LEN 64
-#define MAX_HEADER_VALUE_LEN 256
+#include "Config.h"
 
 typedef struct {
-    char key[MAX_HEADER_KEY_LEN];
-    char value[MAX_HEADER_VALUE_LEN];
+    char key[HTTP_MAX_HEADER_KEY_LEN];
+    char value[HTTP_MAX_HEADER_VALUE_LEN];
 } Header;
 
 /**
@@ -55,7 +51,7 @@ ParseResult crlf_parse(const char *cur, const char *end);
  *
  * @param cur      start of the header line
  * @param end      one past the last readable byte
- * @param headers  header array to append into (cap MAX_HEADERS)
+ * @param headers  header array to append into (cap HTTP_MAX_HEADERS)
  * @param count    in/out current header count
  */
 ParseResult header_line_parse(const char *cur, const char *end, Header * headers, size_t * count);
