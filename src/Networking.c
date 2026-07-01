@@ -86,16 +86,16 @@ static void connection_init(Connection * conn, const int new_fd) {
     memset(&conn->st, 0, sizeof(conn->st));
 
     conn->fd = new_fd;
-    conn->req_buf.buffer = calloc(1, MAX_REQUEST_LEN * sizeof(char));
-    conn->req_buf.cap = MAX_REQUEST_LEN;
+    conn->req_buf.buffer = calloc(1, HTTP_MAX_REQUEST_LEN * sizeof(char));
+    conn->req_buf.cap = HTTP_MAX_REQUEST_LEN;
     conn->req_buf.size = 0;
 
-    conn->resp_buf.buffer = calloc(1, RESPONSE_BUFFER_SIZE * sizeof(char));
-    conn->resp_buf.cap = RESPONSE_BUFFER_SIZE;
+    conn->resp_buf.buffer = calloc(1, HTTP_RESPONSE_BUFFER_SIZE * sizeof(char));
+    conn->resp_buf.cap = HTTP_RESPONSE_BUFFER_SIZE;
     conn->resp_buf.size = 0;
 
-    conn->body_dechunked.buffer = calloc(1, MAX_DECHUNK_SIZE * sizeof(char));
-    conn->body_dechunked.cap = MAX_DECHUNK_SIZE;
+    conn->body_dechunked.buffer = calloc(1, HTTP_MAX_DECHUNK_SIZE * sizeof(char));
+    conn->body_dechunked.cap = HTTP_MAX_DECHUNK_SIZE;
     conn->body_dechunked.size = 0;
 
     conn->requests = 0;

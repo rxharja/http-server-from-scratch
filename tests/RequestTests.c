@@ -343,7 +343,7 @@ void run_request_tests(void) {
     expect_header_value_n("HVal - lone LF rejected","ab\ncd",            5,     PARSE_BAD_REQUEST);
     expect_header_value_n("HVal - embedded NUL",    "ab\0cd",            5,     PARSE_BAD_REQUEST);
 
-    // Length boundaries: buffer is MAX_HEADER_VALUE_LEN = 256 (max storable: 255 + NUL).
+    // Length boundaries: buffer is HTTP_MAX_HEADER_VALUE_LEN = 256 (max storable: 255 + NUL).
     {
         char val_max[256];
         memset(val_max, 'x', 255);
@@ -432,38 +432,38 @@ void run_request_tests(void) {
 
     // parse_uint: generalized strict integer parser.
     // Decimal happy paths.
-    expect_parse_uint("PU - dec '0'",                "0",     1, 10, MAX_BODY_LEN, PARSE_OK, 0);
-    expect_parse_uint("PU - dec '5'",                "5",     1, 10, MAX_BODY_LEN, PARSE_OK, 5);
-    expect_parse_uint("PU - dec '100'",              "100",   3, 10, MAX_BODY_LEN, PARSE_OK, 100);
-    expect_parse_uint("PU - dec '12345'",            "12345", 5, 10, MAX_BODY_LEN, PARSE_OK, 12345);
-    expect_parse_uint("PU - dec leading zeros",      "0005",  4, 10, MAX_BODY_LEN, PARSE_OK, 5);
+    expect_parse_uint("PU - dec '0'",                "0",     1, 10, HTTP_MAX_BODY_LEN, PARSE_OK, 0);
+    expect_parse_uint("PU - dec '5'",                "5",     1, 10, HTTP_MAX_BODY_LEN, PARSE_OK, 5);
+    expect_parse_uint("PU - dec '100'",              "100",   3, 10, HTTP_MAX_BODY_LEN, PARSE_OK, 100);
+    expect_parse_uint("PU - dec '12345'",            "12345", 5, 10, HTTP_MAX_BODY_LEN, PARSE_OK, 12345);
+    expect_parse_uint("PU - dec leading zeros",      "0005",  4, 10, HTTP_MAX_BODY_LEN, PARSE_OK, 5);
 
     // Hex happy paths (case-insensitive).
-    expect_parse_uint("PU - hex '0'",                "0",   1, 16, MAX_BODY_LEN, PARSE_OK, 0);
-    expect_parse_uint("PU - hex 'a' is 10",          "a",   1, 16, MAX_BODY_LEN, PARSE_OK, 10);
-    expect_parse_uint("PU - hex 'F' is 15",          "F",   1, 16, MAX_BODY_LEN, PARSE_OK, 15);
-    expect_parse_uint("PU - hex 'FF' is 255",        "FF",  2, 16, MAX_BODY_LEN, PARSE_OK, 255);
-    expect_parse_uint("PU - hex 'ff' is 255",        "ff",  2, 16, MAX_BODY_LEN, PARSE_OK, 255);
-    expect_parse_uint("PU - hex 'Ff' mixed case",    "Ff",  2, 16, MAX_BODY_LEN, PARSE_OK, 255);
-    expect_parse_uint("PU - hex '1A' is 26",         "1A",  2, 16, MAX_BODY_LEN, PARSE_OK, 26);
-    expect_parse_uint("PU - hex '1a' is 26",         "1a",  2, 16, MAX_BODY_LEN, PARSE_OK, 26);
+    expect_parse_uint("PU - hex '0'",                "0",   1, 16, HTTP_MAX_BODY_LEN, PARSE_OK, 0);
+    expect_parse_uint("PU - hex 'a' is 10",          "a",   1, 16, HTTP_MAX_BODY_LEN, PARSE_OK, 10);
+    expect_parse_uint("PU - hex 'F' is 15",          "F",   1, 16, HTTP_MAX_BODY_LEN, PARSE_OK, 15);
+    expect_parse_uint("PU - hex 'FF' is 255",        "FF",  2, 16, HTTP_MAX_BODY_LEN, PARSE_OK, 255);
+    expect_parse_uint("PU - hex 'ff' is 255",        "ff",  2, 16, HTTP_MAX_BODY_LEN, PARSE_OK, 255);
+    expect_parse_uint("PU - hex 'Ff' mixed case",    "Ff",  2, 16, HTTP_MAX_BODY_LEN, PARSE_OK, 255);
+    expect_parse_uint("PU - hex '1A' is 26",         "1A",  2, 16, HTTP_MAX_BODY_LEN, PARSE_OK, 26);
+    expect_parse_uint("PU - hex '1a' is 26",         "1a",  2, 16, HTTP_MAX_BODY_LEN, PARSE_OK, 26);
 
     // Error paths: the spec is strict; these have no interpretation.
-    expect_parse_uint("PU - empty input",            "",    0, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
-    expect_parse_uint("PU - hex letter in dec",      "1A",  2, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
-    expect_parse_uint("PU - non-digit byte",         "5x",  2, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
-    expect_parse_uint("PU - leading SP",             " 5",  2, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
-    expect_parse_uint("PU - leading HTAB",           "\t5", 2, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
-    expect_parse_uint("PU - leading + sign",         "+5",  2, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
-    expect_parse_uint("PU - leading - sign",         "-5",  2, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
-    expect_parse_uint("PU - 0x prefix in hex",       "0x5", 3, 16, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
-    expect_parse_uint("PU - hex 'G' rejected",       "G",   1, 16, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
-    expect_parse_uint("PU - decimal point",          "1.5", 3, 10, MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - empty input",            "",    0, 10, HTTP_MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - hex letter in dec",      "1A",  2, 10, HTTP_MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - non-digit byte",         "5x",  2, 10, HTTP_MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - leading SP",             " 5",  2, 10, HTTP_MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - leading HTAB",           "\t5", 2, 10, HTTP_MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - leading + sign",         "+5",  2, 10, HTTP_MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - leading - sign",         "-5",  2, 10, HTTP_MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - 0x prefix in hex",       "0x5", 3, 16, HTTP_MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - hex 'G' rejected",       "G",   1, 16, HTTP_MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
+    expect_parse_uint("PU - decimal point",          "1.5", 3, 10, HTTP_MAX_BODY_LEN, PARSE_BAD_REQUEST, 0);
 
-    // Overflow: value exceeds the cap. MAX_BODY_LEN = 1,024,000.
-    expect_parse_uint("PU - dec overflow",  "1024001",        7, 10, MAX_BODY_LEN, PARSE_PAYLOAD_TOO_LARGE, 0);
-    expect_parse_uint("PU - hex overflow",  "fffff",          5, 16, MAX_BODY_LEN, PARSE_PAYLOAD_TOO_LARGE, 0);
-    expect_parse_uint("PU - dec at boundary", "1024000",      7, 10, MAX_BODY_LEN, PARSE_OK, 1024000);
+    // Overflow: value exceeds the cap. HTTP_MAX_BODY_LEN = 1,024,000.
+    expect_parse_uint("PU - dec overflow",  "1024001",        7, 10, HTTP_MAX_BODY_LEN, PARSE_PAYLOAD_TOO_LARGE, 0);
+    expect_parse_uint("PU - hex overflow",  "fffff",          5, 16, HTTP_MAX_BODY_LEN, PARSE_PAYLOAD_TOO_LARGE, 0);
+    expect_parse_uint("PU - dec at boundary", "1024000",      7, 10, HTTP_MAX_BODY_LEN, PARSE_OK, 1024000);
     const char * req_body =
         "GET /about?x=y HTTP/1.1\r\n"
         "Host: www.example.com\r\n"

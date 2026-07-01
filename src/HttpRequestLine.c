@@ -59,7 +59,7 @@ ParseResult uri_parse(const char * cur, const char *end, HttpRequestLine * line)
     size_t query_len = 0;
     char * buf = line->path;
     size_t * len_ptr = &path_len;
-    size_t cap = MAX_PATH_LEN;
+    size_t cap = HTTP_MAX_PATH_LEN;
     int in_query = 0;
     size_t i = 0;
     while (cur + i < sp) {
@@ -72,7 +72,7 @@ ParseResult uri_parse(const char * cur, const char *end, HttpRequestLine * line)
             in_query = 1;
             buf = line->query;
             len_ptr = &query_len;
-            cap = MAX_QUERY_LEN;
+            cap = HTTP_MAX_QUERY_LEN;
             buf[(*len_ptr)++] = c;
             continue;
         }
@@ -118,7 +118,7 @@ ParseResult uri_parse(const char * cur, const char *end, HttpRequestLine * line)
 ParseResult version_parse(const char * cur, const char *end, HttpRequestLine * line) {
     ParseResult res = {0};
     parse_error_set(&res, PARSE_BAD_REQUEST, cur);
-    if (end - cur != VERSION_LEN) return res;
+    if (end - cur != HTTP_VERSION_LEN) return res;
     if (memcmp("HTTP/", cur, 5) != 0) return res;
 
     const char d1 = cur[5];
@@ -136,8 +136,8 @@ ParseResult version_parse(const char * cur, const char *end, HttpRequestLine * l
         return res;
     }
 
-    memcpy(line->version, cur, VERSION_LEN);
-    line->version[VERSION_LEN] = '\0';
+    memcpy(line->version, cur, HTTP_VERSION_LEN);
+    line->version[HTTP_VERSION_LEN] = '\0';
     res.status = PARSE_OK;
     res.next = end;
     return res;
