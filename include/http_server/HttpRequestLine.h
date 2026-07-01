@@ -8,12 +8,7 @@
 #include <stddef.h>
 
 #include "ParseResult.h"
-
-#define MAX_METHOD_LEN 8
-#define MAX_PATH_LEN 2048
-#define MAX_QUERY_LEN 512
-#define MAX_REQUEST_LEN (8 * 1024 * 1024)
-#define VERSION_LEN 8
+#include "Config.h"
 
 typedef enum {
     GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH, UNKNOWN
@@ -34,9 +29,9 @@ char* http_method_show(HttpMethod method);
 
 typedef struct {
     HttpMethod method;
-    char path[MAX_PATH_LEN];
-    char query[MAX_QUERY_LEN];
-    char version[VERSION_LEN * 2];
+    char path[HTTP_MAX_PATH_LEN];
+    char query[HTTP_MAX_QUERY_LEN];
+    char version[HTTP_VERSION_LEN * 2];
 } HttpRequestLine;
 
 /**

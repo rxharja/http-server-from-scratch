@@ -11,7 +11,7 @@
 #include "parser.h"
 
 ParseStatus content_length_parse(const char *val, size_t *out) {
-    return uint_parse(val, strlen(val), 10, MAX_BODY_LEN, out);
+    return uint_parse(val, strlen(val), 10, HTTP_MAX_BODY_LEN, out);
 }
 
 ReadBodyResult conn_recv_body_cl(const int fd, HttpBuffer * req, const size_t body_start, const size_t body_len, CLBodySt * st) {
@@ -151,7 +151,7 @@ ChunkResult chunk_advance(ChunkDecoder * dec, const char * in, const size_t in_l
             if (size_end == cur) { parse_error_set(&res.parse_result, PARSE_BAD_REQUEST, cur); return res; }
 
             // then we take that span and convert it to from base16 to 10, storing it on our len variable.
-            res.parse_result.status = uint_parse(cur, size_end - cur, 16, MAX_BODY_LEN, &len);
+            res.parse_result.status = uint_parse(cur, size_end - cur, 16, HTTP_MAX_BODY_LEN, &len);
             if (res.parse_result.status != PARSE_OK) return res;
 
             // a 0-sized chunk is the terminating signal

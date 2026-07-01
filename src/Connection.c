@@ -165,7 +165,7 @@ static ConnPhase step_header_read(Connection * conn) {
     }
 
     if (ct_len_h) {
-        const ParseStatus ps = uint_parse(ct_len_h->value, strlen(ct_len_h->value), 10, MAX_BODY_LEN, &conn->body_len);
+        const ParseStatus ps = uint_parse(ct_len_h->value, strlen(ct_len_h->value), 10, HTTP_MAX_BODY_LEN, &conn->body_len);
         if (ps != PARSE_OK) {
             response_error_serialize(&conn->resp_buf, ps);
             return phase_send_begin(conn);
@@ -371,7 +371,7 @@ static ConnPhase step_response_send(Connection * conn) {
         case SEND_PEER_CLOSED: return CONN_CLOSED;
         case SEND_OK:
             conn->requests++;
-            if (!conn->keep_alive || conn->requests >= MAX_REQUESTS) return CONN_CLOSED;
+            if (!conn->keep_alive || conn->requests >= HTTP_MAX_REQUESTS) return CONN_CLOSED;
             connection_reset(conn);
             return CONN_READING_REQUEST;
         default: return CONN_CLOSED;
@@ -405,7 +405,7 @@ static ConnPhase step_response_send_stream(Connection * conn) {
                 continue;
             }
             case STREAM_PULL: {
-                char read_buf[STREAM_CHUNK_SIZE];
+                char read_buf[HTTP_STREAM_CHUNK_SIZE];
                 const ssize_t pulled = conn->producer.pull(conn->producer.ctx, read_buf, sizeof(read_buf));
                 if (pulled < 0) return stream_abort(conn);
                 if (pulled == 0) {
@@ -445,7 +445,7 @@ static ConnPhase step_response_send_stream(Connection * conn) {
             case STREAM_DONE: {
                 stream_release(conn);
                 conn->requests++;
-                if (!conn->keep_alive || conn->requests >= MAX_REQUESTS) return CONN_CLOSED;
+                if (!conn->keep_alive || conn->requests >= HTTP_MAX_REQUESTS) return CONN_CLOSED;
                 connection_reset(conn);
                 return CONN_READING_REQUEST;
             }

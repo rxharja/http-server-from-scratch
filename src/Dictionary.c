@@ -20,7 +20,7 @@ uint64_t key_hash(const char *c) {
 }
 
 int dict_insert(Dictionary* d, const Key key, void* value) {
-    const size_t index = key_hash(key) % BUCKET;
+    const size_t index = key_hash(key) % HTTP_BUCKET;
 
     // check if the key exists
     Kvp_node_t * curr = d->bucket[index];
@@ -43,7 +43,7 @@ int dict_insert(Dictionary* d, const Key key, void* value) {
 }
 
 void dict_show(const Dictionary* d) {
-    for (size_t i = 0; i < BUCKET; i++) {
+    for (size_t i = 0; i < HTTP_BUCKET; i++) {
         if (d->bucket[i] != NULL) {
             for (Kvp_node_t * node = d->bucket[i]; node != NULL; node = node->next) {
                 printf("%s -> %s\n", node->value.key, (char*)node->value.value);
@@ -58,7 +58,7 @@ void dict_show(const Dictionary* d) {
 Dictionary* dict_init(void) {
     Dictionary* d = malloc(sizeof(Dictionary));
     if (!d) return NULL;
-    for (size_t i = 0; i < BUCKET; i++) {
+    for (size_t i = 0; i < HTTP_BUCKET; i++) {
         d->bucket[i] = NULL;
     }
     return d;
@@ -67,7 +67,7 @@ Dictionary* dict_init(void) {
 void dict_free(Dictionary* d, void (*destroy)(void*)) {
     if (!d) return;
 
-    for (size_t i = 0; i < BUCKET; i++) {
+    for (size_t i = 0; i < HTTP_BUCKET; i++) {
         if (d->bucket[i] != NULL) {
             Kvp_node_free_all(d->bucket[i], destroy);
             d->bucket[i] = NULL;
@@ -80,7 +80,7 @@ void dict_free(Dictionary* d, void (*destroy)(void*)) {
 void* dict_find(const Dictionary *d, const Key key) {
     if (!d || !key) return NULL;
 
-    const size_t index = key_hash(key) % BUCKET;
+    const size_t index = key_hash(key) % HTTP_BUCKET;
     const Kvp_node_t * node = d->bucket[index];
 
     while (node != NULL) {

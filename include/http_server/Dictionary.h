@@ -9,8 +9,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include "linked_node_macro.h"
-
-#define BUCKET 1024
+#include "Config.h"
 
 typedef const char* Key;
 
@@ -22,7 +21,7 @@ typedef struct {
 linked_node(Kvp)
 
 typedef struct {
-    Kvp_node_t * bucket[BUCKET];
+    Kvp_node_t * bucket[HTTP_BUCKET];
 } Dictionary;
 
 /**
