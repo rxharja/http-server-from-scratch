@@ -82,6 +82,7 @@ static ConnPhase phase_body_dispatch(Connection * conn) {
     // request without a body
     if (conn->body_len == 0) {
         conn->req_parsed.body_len = 0;
+        conn->req_parsed.body = NULL;
         return CONN_BUILDING;
     }
 
@@ -226,6 +227,7 @@ static ConnPhase step_body_cl_read(Connection * conn) {
     // body_res set to this when we have read the full content length or more.
     if (body_res.status == READ_BODY_OK) {
         conn->req_parsed.body_len = conn->st.cl.received;
+        conn->req_parsed.body = conn->req_buf.buffer + conn->body_start;
         conn->next_req_offset = body_res.next_req_offset;
         return CONN_BUILDING;
     }
@@ -246,6 +248,7 @@ static ConnPhase step_body_chunked_read(Connection * conn) {
     switch (body_res.status) {
         case READ_BODY_OK:
             conn->req_parsed.body_len = conn->body_dechunked.size;
+            conn->req_parsed.body = conn->body_dechunked.buffer;
             conn->next_req_offset = body_res.next_req_offset;
             return CONN_BUILDING;
         case READ_BODY_HAS_MORE:
