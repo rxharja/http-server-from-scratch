@@ -123,6 +123,7 @@ static void add_to_client_set(ClientSet *client_set, const int new_fd) {
 void client_set_delete(ClientSet *client_set, const int i) {
     // Copy the one from the end over this one
     client_set->poll_fd_set[i] = client_set->poll_fd_set[client_set->fd_count-1];
+    client_set->conns[i] = client_set->conns[client_set->fd_count-1];
     client_set->fd_count--;
 }
 
