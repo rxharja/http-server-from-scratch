@@ -14,5 +14,6 @@ void run_request_tests(void);
 void run_body_tests(void);
 void run_response_tests(void);
 void run_stream_tests(void);
+void run_arena_tests(void);
 
 #endif //HTTPSERVER_TEST_HARNESS_H
