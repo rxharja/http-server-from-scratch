@@ -39,12 +39,12 @@ void run_arena_tests(void) {
     {
         Arena a;
         arena_init(&a, backing, BACKING_CAP);
-        void *p = arena_alloc(&a, 10, 1);
+        const void *p = arena_alloc(&a, 10, 1);
         check("Arena alloc - non-NULL",     p != NULL, "alloc returned NULL");
         check("Arena alloc - at base",      p == backing, "first alloc not at base (align 1)");
         check("Arena alloc - bumped used",  a.used == 10, "used != 10 after 10-byte alloc");
         // Second allocation is placed immediately after the first (align 1).
-        void *q = arena_alloc(&a, 5, 1);
+        const void *q = arena_alloc(&a, 5, 1);
         check("Arena alloc - contiguous",   q == backing + 10, "second alloc not contiguous");
         check("Arena alloc - bumped again", a.used == 15, "used != 15 after 10+5");
     }
@@ -54,7 +54,7 @@ void run_arena_tests(void) {
         Arena a;
         arena_init(&a, backing, BACKING_CAP);
         arena_alloc(&a, 1, 1);                 // used = 1 (deliberately mis-aligns the cursor)
-        void *p = arena_alloc(&a, 4, 8);        // must round 1 up to 8
+        const void *p = arena_alloc(&a, 4, 8);        // must round 1 up to 8
         check("Arena align - pointer aligned", is_aligned(p, 8), "returned pointer not 8-aligned");
         check("Arena align - at offset 8",     p == backing + 8, "not placed at aligned offset");
         check("Arena align - padding charged", a.used == 12, "used != 12 (8 aligned + 4 payload)");
@@ -64,7 +64,7 @@ void run_arena_tests(void) {
     {
         Arena a;
         arena_init(&a, backing, BACKING_CAP);
-        void *p = arena_alloc(&a, BACKING_CAP, 1);
+        const void *p = arena_alloc(&a, BACKING_CAP, 1);
         check("Arena exact - fills region", p != NULL, "cap-sized alloc failed");
         check("Arena exact - used == cap",  a.used == BACKING_CAP, "used != cap after exact fill");
         // Nothing left: even a single byte must now fail.
@@ -104,11 +104,11 @@ void run_arena_tests(void) {
     {
         Arena a;
         arena_init(&a, backing, BACKING_CAP);
-        void *keep = arena_alloc(&a, 32, 1);    // "connection-lifetime" allocation
+        const void *keep = arena_alloc(&a, 32, 1);    // "connection-lifetime" allocation
         const size_t mark = arena_mark(&a);
         check("Arena mark - value", mark == 32, "mark != used at checkpoint");
 
-        void *scratch = arena_alloc(&a, 64, 1); // "per-request" scratch
+        const void *scratch = arena_alloc(&a, 64, 1); // "per-request" scratch
         check("Arena mark - scratch placed", scratch == backing + 32, "scratch not after keep");
         check("Arena mark - grew",           a.used == 96, "used != 96 before reset");
 
@@ -116,7 +116,7 @@ void run_arena_tests(void) {
         check("Arena reset_to - rewound", a.used == 32, "reset_to did not restore mark");
 
         // Next allocation reuses the reclaimed bytes: same address as the scratch.
-        void *reused = arena_alloc(&a, 8, 1);
+        const void *reused = arena_alloc(&a, 8, 1);
         check("Arena reset_to - reuses space", reused == scratch, "reclaimed bytes not reused");
         check("Arena reset_to - keep intact",  keep == backing, "pre-mark allocation moved");
     }
