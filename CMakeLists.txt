@@ -44,6 +44,7 @@ add_executable(HttpServerTests
         tests/BodyTests.c
         tests/ResponseTests.c
         tests/StreamTests.c
+        tests/ArenaTests.c
 )
 target_link_libraries(HttpServerTests PRIVATE HttpServer)
 target_include_directories(HttpServerTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
