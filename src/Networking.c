@@ -13,11 +13,8 @@
 #include <poll.h>
 #include "Networking.h"
 #include <fcntl.h>
-
 #include "Connection.h"
 #include "parser.h"
-
-#define TIMEOUT 30
 
 static const char *inet_ntop2(void *addr, char *buf, const size_t size) {
     const struct sockaddr_storage *sas = addr;
@@ -129,7 +126,6 @@ void client_set_delete(ClientSet *client_set, const int i) {
 
 
 void client_set_add_new(const int listener, ClientSet *client_set) {
-    // const struct timeval timeout = { .tv_sec = TIMEOUT, .tv_usec = 0 };
     struct sockaddr_storage remote_addr; // Client address
     socklen_t addrlen;
 
@@ -138,7 +134,6 @@ void client_set_add_new(const int listener, ClientSet *client_set) {
 
     addrlen = sizeof remote_addr;
     const int new_fd = accept(listener, (struct sockaddr *) &remote_addr, &addrlen);
-    // setsockopt(new_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
     if (new_fd == -1) {
         perror("accept");
