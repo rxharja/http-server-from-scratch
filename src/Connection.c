@@ -3,13 +3,11 @@
 //
 
 #include "Connection.h"
-
 #include <assert.h>
 #include <errno.h>
 #include <string.h>
 #include <asm-generic/errno-base.h>
 #include <sys/socket.h>
-
 #include "http_server/HttpBody.h"
 #include "http_server/HttpRequest.h"
 #include "http_server/HttpResponse.h"
@@ -27,12 +25,20 @@ ReadHeaderResult conn_recv_header(const int fd, HttpBuffer * req) {
     res.total_received = (ssize_t)req->size;
 
     while (1) {
+        const char *terminator = memmem( req->buffer, res.total_received, "\r\n\r\n", 4);
+
+        if (terminator) {
+            res.status = READ_HEADER_OK;
+            res.body_start = terminator - req->buffer + 4; // pointer end - pointer start + 4
+            break;
+        }
+
         if (res.total_received >= (ssize_t)req->cap) {
             res.status = READ_HEADER_TOO_LARGE; // return 431
             break;
         }
 
-        const ssize_t got = recv(fd, req->buffer + req->size, req->cap - req->size, 0);
+        const ssize_t got = recv(fd, req->buffer + res.total_received, req->cap - res.total_received, 0);
 
         if (got == 0) {
             res.status = READ_HEADER_PEER_CLOSED; // 400
@@ -47,14 +53,6 @@ ReadHeaderResult conn_recv_header(const int fd, HttpBuffer * req) {
         }
 
         res.total_received += got;
-
-        const char *terminator = memmem( req->buffer, res.total_received, "\r\n\r\n", 4);
-
-        if (terminator) {
-            res.status = READ_HEADER_OK;
-            res.body_start = terminator - req->buffer + 4; // pointer end - pointer start + 4
-            break;
-        }
     }
 
     req->size = res.total_received;
@@ -83,6 +81,7 @@ static ConnPhase phase_body_dispatch(Connection * conn) {
     if (conn->body_len == 0) {
         conn->req_parsed.body_len = 0;
         conn->req_parsed.body = NULL;
+        conn->next_req_offset = conn->body_start; // bodyless request's next request will start where the body should be
         return CONN_BUILDING;
     }
 
