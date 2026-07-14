@@ -14,12 +14,12 @@
 #include "Networking.h"
 
 int server_port_valid(const char * str) {
-    char *endptr;
+    char *end_ptr;
     errno = 0;
 
-    const long num = strtol(str, &endptr, 10);
+    const long num = strtol(str, &end_ptr, 10);
 
-    if (errno != 0 || *endptr != '\0' || endptr == str) return 1;
+    if (errno != 0 || *end_ptr != '\0' || end_ptr == str) return 1;
     if (num <= 0 || num > 65535) return 1;
     return 0;
 }
