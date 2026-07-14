@@ -150,6 +150,8 @@ int router_has_duplicate_routes(const Router *router);
  */
 HttpResponse response_for_entry(const HttpRequest * req, const ContentEntry * entry);
 
+HttpResponse response_streamed(const ContentEntry * file, Arena * scratch);
+
 /**
  * Register a single file under `url`, choosing its caching and delivery
  * behavior via `mode`:

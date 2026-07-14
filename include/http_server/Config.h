@@ -76,6 +76,20 @@
 #define HTTP_MAX_REQUESTS 100
 #endif
 
+#ifndef HTTP_MAX_CONNECTIONS
+#define HTTP_MAX_CONNECTIONS 4
+#endif
+
+/* ---- Arena --------------------------------------------------------------- */
+#ifndef HTTP_ARENA_SLACK
+#define HTTP_ARENA_SLACK (8 * 1024)
+#endif
+
+#ifndef HTTP_CONN_ARENA_SIZE
+#define HTTP_CONN_ARENA_SIZE \
+    (HTTP_MAX_REQUEST_LEN + HTTP_RESPONSE_BUFFER_SIZE + HTTP_MAX_DECHUNK_SIZE + HTTP_ARENA_SLACK)
+#endif
+
 /* ---- Content registry ---------------------------------------------------- */
 #ifndef HTTP_BUCKET
 #define HTTP_BUCKET 1024
