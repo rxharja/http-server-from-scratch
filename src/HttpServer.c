@@ -56,7 +56,6 @@ int server_run(const char * port, const Router * router, const size_t backlog) {
     client_set.poll_fd_set[0].fd = listener;
     client_set.poll_fd_set[0].events = POLLIN;
     client_set.poll_fd_set[0].revents = 0;
-    client_set.live_fd_count = 1;
 
     // mark all clients as free with -1
     for (int i = 1; i <= HTTP_MAX_CONNECTIONS; i++) {
@@ -81,7 +80,7 @@ int server_run(const char * port, const Router * router, const size_t backlog) {
             Connection * conn = &client_set.conns[i];
             connection_step_process(conn, router);
             poll_fd->events = conn_phase_event(conn->phase);
-            if (conn->phase == CONN_CLOSED) connection_close(&client_set, &i);
+            if (conn->phase == CONN_CLOSED) connection_close(&client_set, i);
         }
     }
 }
