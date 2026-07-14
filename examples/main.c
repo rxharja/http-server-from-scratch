@@ -8,9 +8,9 @@
 
 static HttpResponse not_found(const HttpRequest * request) {
     static const ResponseHeader h[1] = { { "Content-Type", "text/html" }, };
-    static const char body[] = "<h1>Nothing here...</h1>\n";
+    static const char body[] = "<h1 style=\"font-family: sans-serif; color: orange;\">Welcome to my test page</h1>\n";
     static const HttpResponse response = {
-        .status = 404, .reason = "Not Found",
+        .status = 200, .reason = "OK",
         .headers = h,  .header_count = 1,
         .kind = BODY_BUFFER,
         .body.body_buf = (HttpBuffer) { .buffer = (char*)body, .size = sizeof body - 1, .cap = sizeof body - 1 }

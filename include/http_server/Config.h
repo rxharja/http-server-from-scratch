@@ -82,7 +82,7 @@
 
 /* ---- Arena --------------------------------------------------------------- */
 #ifndef HTTP_ARENA_SLACK
-#define HTTP_ARENA_SLACK 64
+#define HTTP_ARENA_SLACK (8 * 1024)
 #endif
 
 #ifndef HTTP_CONN_ARENA_SIZE

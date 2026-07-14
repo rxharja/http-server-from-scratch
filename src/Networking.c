@@ -12,6 +12,8 @@
 #include <netdb.h>
 #include <poll.h>
 #include "Networking.h"
+
+#include <assert.h>
 #include <fcntl.h>
 #include "Connection.h"
 #include "parser.h"
@@ -78,50 +80,61 @@ int listener_socket_get(const char * port, const size_t backlog) {
     return listener;
 }
 
-static void connection_init(Connection * conn, const int new_fd) {
+static void connection_init(Connection * conn, uint8_t * backing, const size_t backing_cap, const int new_fd) {
+    arena_init(&conn->mem.arena, backing, backing_cap);
+
     memset(&conn->req_parsed, 0, sizeof(conn->req_parsed));
     memset(&conn->st, 0, sizeof(conn->st));
 
     conn->fd = new_fd;
-    conn->req_buf.buffer = calloc(1, HTTP_MAX_REQUEST_LEN * sizeof(char));
-    conn->req_buf.cap = HTTP_MAX_REQUEST_LEN;
-    conn->req_buf.size = 0;
+    conn->mem.req_buf.buffer = arena_alloc(&conn->mem.arena, HTTP_MAX_REQUEST_LEN * sizeof(char), 1);
+    assert(conn->mem.req_buf.buffer);
+    conn->mem.req_buf.cap = HTTP_MAX_REQUEST_LEN;
+    conn->mem.req_buf.size = 0;
 
-    conn->resp_buf.buffer = calloc(1, HTTP_RESPONSE_BUFFER_SIZE * sizeof(char));
-    conn->resp_buf.cap = HTTP_RESPONSE_BUFFER_SIZE;
-    conn->resp_buf.size = 0;
+    conn->mem.resp_buf.buffer = arena_alloc(&conn->mem.arena, HTTP_RESPONSE_BUFFER_SIZE * sizeof(char), 1);
+    assert(conn->mem.resp_buf.buffer);
+    conn->mem.resp_buf.cap = HTTP_RESPONSE_BUFFER_SIZE;
+    conn->mem.resp_buf.size = 0;
 
-    conn->body_dechunked.buffer = calloc(1, HTTP_MAX_DECHUNK_SIZE * sizeof(char));
-    conn->body_dechunked.cap = HTTP_MAX_DECHUNK_SIZE;
-    conn->body_dechunked.size = 0;
+    conn->mem.body_dechunked.buffer = arena_alloc(&conn->mem.arena, HTTP_MAX_DECHUNK_SIZE * sizeof(char), 1);
+    assert(conn->mem.body_dechunked.buffer);
+    conn->mem.body_dechunked.cap = HTTP_MAX_DECHUNK_SIZE;
+    conn->mem.body_dechunked.size = 0;
 
     conn->requests = 0;
     conn->phase = CONN_READING_REQUEST;
+    conn->mem.req_mark = arena_mark(&conn->mem.arena);
+}
+
+void connection_close(ClientSet * client_set, const int *pfd_i) {
+    close(client_set->poll_fd_set[*pfd_i].fd);
+    client_set_delete(client_set, *pfd_i);
 }
 
 static void add_to_client_set(ClientSet *client_set, const int new_fd) {
-    if (client_set == NULL || client_set->poll_fd_set == NULL || client_set->conns == NULL) return;
+    assert(client_set);
 
-    // If we don't have room, add more space in the poll fd array
-    if (client_set->fd_count == client_set->fd_size) {
-        client_set->fd_size *= 2; // double it
-        client_set->poll_fd_set = realloc(client_set->poll_fd_set, sizeof(*client_set->poll_fd_set) * client_set->fd_size);
-        client_set->conns = realloc(client_set->conns, sizeof(*client_set->conns) * client_set->fd_size);
+    for (int i = 1; i <= HTTP_MAX_CONNECTIONS; i++) {
+       if (client_set ->poll_fd_set[i].fd == -1) {
+            client_set->poll_fd_set[i].fd = new_fd;
+            client_set->poll_fd_set[i].events = POLLIN;
+            client_set->poll_fd_set[i].revents = 0;
+            connection_init(&client_set->conns[i], client_set->arena_backing[i - 1], HTTP_CONN_ARENA_SIZE, new_fd);
+            client_set->live_fd_count++;
+           return;
+       }
     }
 
-    client_set->poll_fd_set[client_set->fd_count].fd = new_fd;
-    client_set->poll_fd_set[client_set->fd_count].events = POLLIN;
-    client_set->poll_fd_set[client_set->fd_count].revents = 0;
-    connection_init(&client_set->conns[client_set->fd_count], new_fd);
-
-    client_set->fd_count++;
+    // if there are no free slots we refuse the connection
+    close(new_fd);
 }
 
 void client_set_delete(ClientSet *client_set, const int i) {
-    // Copy the one from the end over this one
-    client_set->poll_fd_set[i] = client_set->poll_fd_set[client_set->fd_count-1];
-    client_set->conns[i] = client_set->conns[client_set->fd_count-1];
-    client_set->fd_count--;
+    assert(client_set);
+    assert(i > 0);
+    client_set->poll_fd_set[i].fd = -1;
+    client_set->live_fd_count--;
 }
 
 
