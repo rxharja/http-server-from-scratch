@@ -294,6 +294,7 @@ static ConnPhase step_response_build(Connection * conn, const Router * router) {
 
     HttpResponse res = {0};
     const HttpRequest * req = &conn->req_parsed;
+    conn->req_parsed.scratch = &conn->mem.arena;
     ResponseHeader allow_h = {0};
     char allow_storage[128] = {0};
     const HttpBuffer allow_buf = { .buffer = allow_storage, .cap = sizeof(allow_storage) };

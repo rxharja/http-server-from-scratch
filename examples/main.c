@@ -26,8 +26,9 @@ static HttpResponse do_something(const HttpRequest * request) {
         .kind = BODY_BUFFER,
         .body.body_buf = (HttpBuffer) { .buffer = NULL, .size = request->body_len, .cap = request->body_len }
     };
-    char *body_buf = malloc(request->body_len);
-    // todo: currently the OS reclaims the heap by the process ending
+
+    char *body_buf = arena_alloc(request->scratch, request->body_len, 1);
+    if (!body_buf) return response_error_from_status(PARSE_SERVER_ERROR);
     memcpy(body_buf, request->body, request->body_len);
     response.body.body_buf.buffer = body_buf;
     return response;

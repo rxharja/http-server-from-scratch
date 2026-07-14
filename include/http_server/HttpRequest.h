@@ -5,6 +5,7 @@
 #ifndef HTTPREQUEST_H
 #define HTTPREQUEST_H
 
+#include "Arena.h"
 #include "HttpBody.h"
 #include "HttpHeaders.h"
 #include "HttpRequestLine.h"
@@ -18,6 +19,7 @@ typedef struct {
     size_t header_count;
     const char * body; // non-owning pointer into a connection-lifetime buffer
     size_t body_len;
+    Arena * scratch;   // per-request scratch; reclaimed in connection_reset;
 } HttpRequest;
 
 /**
