@@ -4,14 +4,16 @@
 
 #ifndef HTTPSERVER_NETWORKING_H
 #define HTTPSERVER_NETWORKING_H
+
+#include <stdint.h>
 #include "Connection.h"
 
 // struct for managing connections and poll_fds in one go
 typedef struct {
-    int fd_size; // capacity used for both conns and poll_fd_set
-    int fd_count; // how many within capacity, for both conns and poll_fd_set
-    struct pollfd *poll_fd_set; // used for polling fd's
-    Connection *conns; // parallel array to poll_fd_set tracking connection state
+    int live_fd_count;                                        // how many within capacity, for both conns and poll_fd_set
+    struct pollfd poll_fd_set[HTTP_MAX_CONNECTIONS + 1]; // used for polling fd's, [0] = listener, [1..MAX] = clients
+    Connection          conns[HTTP_MAX_CONNECTIONS + 1]; // parallel array to poll_fd_set tracking connection state
+    uint8_t     arena_backing[HTTP_MAX_CONNECTIONS][HTTP_CONN_ARENA_SIZE];
 }ClientSet;
 
 //Return a listening socket.
@@ -22,5 +24,7 @@ void client_set_delete(ClientSet *client_set, int i);
 
 // Handle incoming connections.
 void client_set_add_new(int listener, ClientSet *client_set);
+
+void connection_close(ClientSet * client_set, const int *pfd_i);
 
 #endif //HTTPSERVER_NETWORKING_H

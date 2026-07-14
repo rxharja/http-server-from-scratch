@@ -5,6 +5,7 @@
 #ifndef HTTPSERVER_CONNECTION_H
 #define HTTPSERVER_CONNECTION_H
 #include <stdio.h>
+#include "http_server/Arena.h"
 #include "http_server/HttpBuffer.h"
 #include "http_server/HttpResponse.h"
 #include "http_server/HttpRouter.h"
@@ -42,12 +43,18 @@ typedef enum {
 } ConnPhase;
 
 typedef struct {
+    Arena arena;               // bump allocator over this slot's backing
+    size_t req_mark;           // checkpoint; arena_reset_to() here between keep-alive requests
+    HttpBuffer req_buf;       // raw request bytes
+    HttpBuffer resp_buf;       // response staging
+    HttpBuffer body_dechunked; // decoded chunked body
+} ConnMem;
+
+typedef struct {
     int fd;
     ConnPhase phase;
     int keep_alive;
-    HttpBuffer req_buf;
-    HttpBuffer resp_buf;
-    HttpBuffer body_dechunked;
+    ConnMem mem;
     HttpRequest req_parsed;
     size_t body_start;
     size_t body_len;            // for Content-Length
