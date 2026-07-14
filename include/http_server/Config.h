@@ -12,10 +12,59 @@
 //   2. Define before including any http_server header (e.g. a prefix header).
 //
 // Defaults target POSIX systems with generous memory. Constrained targets
-// (e.g. ESP32-class hardware) will want to shrink most of these.
+// (e.g. ESP32-class hardware) will want to shrink most of these, either macro by
+// macro or in one shot with -DHTTP_PROFILE_ESP32 (see the profile block below).
 
 #ifndef HTTPSERVER_CONFIG_H
 #define HTTPSERVER_CONFIG_H
+
+/* ---- ESP32 profile ------------------------------------------------------- */
+// Selected with -DHTTP_PROFILE_ESP32. Shrinks the working set for ~300 KiB-SRAM
+// class targets. Each value is still #ifndef-guarded, so precedence runs
+// explicit -D (wins) > profile > POSIX default (below). At MAX_CONNECTIONS=4
+// this is a ~14 KiB arena per connection (req 4K + resp 4K + dechunk 2K +
+// slack 4K), so ~56 KiB of static arena pool plus a few KiB of Connection state.
+#ifdef HTTP_PROFILE_ESP32
+  #ifndef HTTP_MAX_PATH_LEN
+  #define HTTP_MAX_PATH_LEN 256
+  #endif
+  #ifndef HTTP_MAX_QUERY_LEN
+  #define HTTP_MAX_QUERY_LEN 128
+  #endif
+  #ifndef HTTP_MAX_REQUEST_LEN
+  #define HTTP_MAX_REQUEST_LEN (4 * 1024)
+  #endif
+  #ifndef HTTP_MAX_HEADERS
+  #define HTTP_MAX_HEADERS 16
+  #endif
+  #ifndef HTTP_MAX_HEADER_KEY_LEN
+  #define HTTP_MAX_HEADER_KEY_LEN 48
+  #endif
+  #ifndef HTTP_MAX_HEADER_VALUE_LEN
+  #define HTTP_MAX_HEADER_VALUE_LEN 128
+  #endif
+  #ifndef HTTP_MAX_BODY_LEN
+  #define HTTP_MAX_BODY_LEN (4 * 1024)
+  #endif
+  #ifndef HTTP_MAX_DECHUNK_SIZE
+  #define HTTP_MAX_DECHUNK_SIZE (2 * 1024)
+  #endif
+  #ifndef HTTP_RESPONSE_BUFFER_SIZE
+  #define HTTP_RESPONSE_BUFFER_SIZE (4 * 1024)
+  #endif
+  #ifndef HTTP_STREAM_CHUNK_SIZE
+  #define HTTP_STREAM_CHUNK_SIZE (1 * 1024)
+  #endif
+  #ifndef HTTP_MAX_CONNECTIONS
+  #define HTTP_MAX_CONNECTIONS 4
+  #endif
+  #ifndef HTTP_ARENA_SLACK
+  #define HTTP_ARENA_SLACK (4 * 1024)
+  #endif
+  #ifndef HTTP_BUCKET
+  #define HTTP_BUCKET 64
+  #endif
+#endif // HTTP_PROFILE_ESP32
 
 /* ---- Request line -------------------------------------------------------- */
 #ifndef HTTP_MAX_PATH_LEN
