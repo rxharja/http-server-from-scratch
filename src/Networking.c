@@ -106,9 +106,9 @@ static void connection_init(Connection * conn, uint8_t * backing, const size_t b
     conn->mem.req_mark = arena_mark(&conn->mem.arena);
 }
 
-void connection_close(ClientSet * client_set, const int *pfd_i) {
-    close(client_set->poll_fd_set[*pfd_i].fd);
-    client_set_delete(client_set, *pfd_i);
+void connection_close(ClientSet * client_set, const int i) {
+    close(client_set->poll_fd_set[i].fd);
+    client_set_delete(client_set, i);
 }
 
 static void add_to_client_set(ClientSet *client_set, const int new_fd) {
@@ -120,7 +120,6 @@ static void add_to_client_set(ClientSet *client_set, const int new_fd) {
             client_set->poll_fd_set[i].events = POLLIN;
             client_set->poll_fd_set[i].revents = 0;
             connection_init(&client_set->conns[i], client_set->arena_backing[i - 1], HTTP_CONN_ARENA_SIZE, new_fd);
-            client_set->live_fd_count++;
            return;
        }
     }
@@ -133,7 +132,6 @@ void client_set_delete(ClientSet *client_set, const int i) {
     assert(client_set);
     assert(i > 0);
     client_set->poll_fd_set[i].fd = -1;
-    client_set->live_fd_count--;
 }
 
 
