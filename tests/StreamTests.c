@@ -13,11 +13,27 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include "http_server/HttpResponse.h"
 #include "http_server/HttpRouter.h"
+#include "http_server/Arena.h"
 #include "test_harness.h"
+
+// The streamed dispatch path now arena-allocates its FileCtx from req->scratch,
+// so tests must hand response_for_entry a request carrying a live scratch arena
+// (a FileCtx is only a few bytes). The request is otherwise unused on this path.
+// Statics keep the ~13 KiB HttpRequest off the test stack; each call re-inits the
+// arena, so a stream's ctx stays valid until the caller drains and cleans it up.
+static HttpRequest *stream_req(void) {
+    static uint8_t    scratch_mem[256];
+    static Arena      scratch;
+    static HttpRequest req;
+    arena_init(&scratch, scratch_mem, sizeof scratch_mem);
+    req.scratch = &scratch;
+    return &req;
+}
 
 // serve_file is the registration API but isn't in the public header yet, so we
 // forward-declare it here to drive the real serve_file -> lookup -> dispatch path
@@ -41,16 +57,15 @@ static int make_temp(char *path_out, const char *content, const size_t len) {
     return 0;
 }
 
-// Build a SERVE_DYN_STREAMED entry pointing at fs_path and dispatch. req is
-// unused on the streamed path, so NULL is safe (and avoids stack-allocating the
-// large HttpRequest).
+// Build a SERVE_DYN_STREAMED entry pointing at fs_path and dispatch through the
+// public door with a scratch-carrying request (see stream_req).
 static HttpResponse open_stream(RevalMeta *meta, ContentEntry *entry, const char *fs_path) {
     *meta = (RevalMeta){0};
     strncpy(meta->fs_path, fs_path, sizeof(meta->fs_path) - 1);
     *entry = (ContentEntry){0};
     entry->mode = SERVE_DYN_STREAMED;
     entry->reval = meta;
-    return response_for_entry(NULL, entry);
+    return response_for_entry(stream_req(), entry);
 }
 
 // Pull the whole stream into out using reads of at most `chunk` bytes.
@@ -169,7 +184,7 @@ void run_stream_tests(void) {
                       !has_header(d.entry->headers, 4, "Content-Length"),
                       "registered entry headers contain Content-Length");
 
-                HttpResponse res = response_for_entry(NULL, d.entry);
+                HttpResponse res = response_for_entry(stream_req(), d.entry);
                 check("Serve file - dispatch is stream",
                       res.kind == BODY_STREAM, "response_for_entry not BODY_STREAM");
                 check("Serve file - header count 4",

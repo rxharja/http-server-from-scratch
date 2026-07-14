@@ -27,7 +27,7 @@ static HttpResponse do_something(const HttpRequest * request) {
         .body.body_buf = (HttpBuffer) { .buffer = NULL, .size = request->body_len, .cap = request->body_len }
     };
 
-    char *body_buf = arena_alloc(request->scratch, request->body_len, 1);
+    char *body_buf = arena_array(request->scratch, char, request->body_len);
     if (!body_buf) return response_error_from_status(PARSE_SERVER_ERROR);
     memcpy(body_buf, request->body, request->body_len);
     response.body.body_buf.buffer = body_buf;
@@ -56,7 +56,7 @@ int main(const int argc, char *argv[]) {
         .routes = routes
     };
 
-    content_registry_add_dir(router.registry, "wwwroot", NULL, SERVE_DYN_STREAMED);
+    content_registry_add_dir(router.registry, "wwwroot-wasm", NULL, SERVE_DYN_STREAMED);
 
     server_run(argv[1], &router, BACKLOG);
 

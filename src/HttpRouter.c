@@ -170,26 +170,24 @@ static ssize_t file_pull(void * ctx, char * out, const size_t cap) {
 
 static void file_close(void * ctx) {
     close(((FileCtx*)ctx)->fd);
-    free(ctx);
 }
 
-static Stream file_stream_open(const char * fs_path) {
+static Stream file_stream_open(const char * fs_path, Arena * scratch) {
     const int fd = open(fs_path, O_RDONLY | O_CLOEXEC);
     if (fd < 0) return (Stream){0};
 
-    // NOLINTNEXTLINE(clang-analyzer-unix.Malloc): ownership transfers to Stream.ctx, freed in file_close
-    FileCtx * c = malloc(sizeof *c);
+    FileCtx * c = arena_new(scratch, FileCtx);
     if (!c) { close(fd); return (Stream){0}; }
     c->fd = fd;
     return (Stream) { .ctx = c, .pull = file_pull, .cleanup = file_close, };
 }
 
-HttpResponse response_streamed(const ContentEntry * file) {
+HttpResponse response_streamed(const ContentEntry * file, Arena * scratch) {
     assert(file);
     assert(file->reval);
     assert(file->reval->fs_path);
 
-    const Stream s = file_stream_open(file->reval->fs_path);
+    const Stream s = file_stream_open(file->reval->fs_path, scratch);
     if (!s.pull) return response_error_from_status(PARSE_SERVER_ERROR);
 
     // 4 is the number of headers we set when in streaming mode, see content_registry_add_dir below.
@@ -281,7 +279,7 @@ HttpResponse response_for_entry(const HttpRequest * req, const ContentEntry * en
      switch (entry->mode) {
         case SERVE_STATIC_RESIDENT:
         case SERVE_DYN_RESIDENT: return response_resident(req, entry);
-        case SERVE_DYN_STREAMED: return response_streamed(entry);
+        case SERVE_DYN_STREAMED: return response_streamed(entry, req->scratch);
      }
 
     return response_error_from_status(PARSE_SERVER_ERROR);
