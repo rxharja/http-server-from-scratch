@@ -184,6 +184,7 @@ static Stream file_stream_open(const char * fs_path, Arena * scratch) {
 
 HttpResponse response_streamed(const ContentEntry * file, Arena * scratch) {
     assert(file);
+    assert(scratch);
     assert(file->reval);
     assert(file->reval->fs_path);
 
