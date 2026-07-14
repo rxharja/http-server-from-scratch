@@ -116,7 +116,7 @@ can `#include <http_server/HttpServer.h>` without any further configuration.
 
 Every buffer size and protocol limit is a compile-time knob, collected in one
 place: [`include/http_server/Config.h`](include/http_server/Config.h). Each is
-`#ifndef`-guarded, so you override any of them without editing the file — either
+`#ifndef`-guarded, so you override any of them without editing the file, either
 on the compiler command line or by defining it before including any
 `http_server` header:
 
@@ -144,7 +144,13 @@ The defaults target POSIX systems with generous memory; constrained targets
 | `HTTP_RESPONSE_BUFFER_SIZE` |    8 KiB | Per-connection response / stream staging buffer    |
 | `HTTP_STREAM_CHUNK_SIZE`    |    4 KiB | Bytes pulled from a stream producer per iteration  |
 | `HTTP_MAX_REQUESTS`         |     100 | Requests served per keep-alive connection          |
+| `HTTP_MAX_CONNECTIONS`      |       4 | Concurrent connections; sizes the static arena pool |
+| `HTTP_ARENA_SLACK`          |    8 KiB | Per-connection arena headroom above the fixed buffers (handler scratch) |
 | `HTTP_BUCKET`               |    1024 | Content-registry hash-table bucket count           |
+
+Each connection's arena is `HTTP_CONN_ARENA_SIZE` (the request + response +
+dechunk buffers plus `HTTP_ARENA_SLACK`), and the pool reserves one per
+connection in BSS, so the working-set footprint is known at link time.
 
 (`HTTP_VERSION_LEN` and `HTTP_CHUNK_LINE_SIZE` are also in `Config.h` but are
 protocol-fixed, not tuning knobs.)
@@ -170,23 +176,29 @@ through the consumer's include path. The library's ABI is everything under
 
 ## Roadmap
 
-The current implementation targets POSIX systems with generous memory budgets
-(the response buffer is 128 MB per connection, headers up to 8 MB). Embedded
-deployment is planned, and would require:
+Embedded (ESP32-class) deployment is the eventual target. What remains:
 
-- **Buffer sizing.** Every `*_MAX_*` and buffer-size macro is now tunable at
-  compile time via [`Config.h`](include/http_server/Config.h) (see
-  [Configuration](#configuration)). Still to do: move `HttpRequest::body` out of
-  the struct so a parsed request isn't a megabyte.
-- **Allocation strategy.** Replace per-request `malloc()` with either fully
-  static buffers or a per-connection arena allocator, to avoid heap fragmentation
-  on long-running devices. The arena variant also gives consumer handlers a
-  scoped scratch space for per-request allocations.
 - **Platform abstraction.** A small `platform.h` over the socket and file I/O
   primitives, with POSIX and lwIP implementations behind it. Remove
   Linux-specific headers (e.g. `asm-generic/errno-base.h`).
 
 Already done:
+
+- **Buffer sizing.** Every `*_MAX_*` and buffer-size macro is tunable at compile
+  time via [`Config.h`](include/http_server/Config.h) (see
+  [Configuration](#configuration)), so a constrained target can shrink the entire
+  working set from one header. A parsed `HttpRequest` holds `body` as a pointer
+  into a connection-lifetime buffer rather than an inline megabyte, so the struct
+  is a few KiB.
+- **Allocation strategy.** The request path is heap-free. Each connection owns a
+  fixed, BSS-resident arena: a bump allocator over a static backing region sized
+  at compile time for `HTTP_MAX_CONNECTIONS`. The request, response, and dechunk
+  buffers are carved from it once at connection setup; per-request scratch is
+  released back to a checkpoint between keep-alive requests; and handlers receive
+  the same arena as scoped scratch (`req->scratch`) instead of calling `malloc`.
+  No per-request allocation means no heap fragmentation on a long-running device.
+  (The content registry's boot-time, one-shot allocations, the resident file
+  cache and its hash table, stay on the heap by design; they don't churn.)
 
 - **Streaming responses.** `HttpResponse` is now a tagged union whose body can be
   a materialized buffer or a pull-based `Stream` (`ctx` + `pull`/`cleanup`
