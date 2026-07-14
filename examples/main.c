@@ -8,9 +8,9 @@
 
 static HttpResponse not_found(const HttpRequest * request) {
     static const ResponseHeader h[1] = { { "Content-Type", "text/html" }, };
-    static const char body[] = "<h1>Nothing here...</h1>\n";
+    static const char body[] = "<h1 style=\"font-family: sans-serif; color: orange;\">Welcome to my test page</h1>\n";
     static const HttpResponse response = {
-        .status = 404, .reason = "Not Found",
+        .status = 200, .reason = "OK",
         .headers = h,  .header_count = 1,
         .kind = BODY_BUFFER,
         .body.body_buf = (HttpBuffer) { .buffer = (char*)body, .size = sizeof body - 1, .cap = sizeof body - 1 }
@@ -26,8 +26,9 @@ static HttpResponse do_something(const HttpRequest * request) {
         .kind = BODY_BUFFER,
         .body.body_buf = (HttpBuffer) { .buffer = NULL, .size = request->body_len, .cap = request->body_len }
     };
-    char *body_buf = malloc(request->body_len);
-    // todo: currently the OS reclaims the heap by the process ending
+
+    char *body_buf = arena_array(request->scratch, char, request->body_len);
+    if (!body_buf) return response_error_from_status(PARSE_SERVER_ERROR);
     memcpy(body_buf, request->body, request->body_len);
     response.body.body_buf.buffer = body_buf;
     return response;

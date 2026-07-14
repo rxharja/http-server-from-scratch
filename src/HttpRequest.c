@@ -4,6 +4,7 @@
 
 #include "http_server/HttpRequest.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include "parser.h"
 
@@ -39,9 +40,10 @@ ParseResult request_parse(const char * buf, const size_t len, HttpRequest * req)
 }
 
 void request_show(const HttpRequest * req) {
+    assert(req);
     printf("\n");
     request_line_show(&req->request_line);
     headers_show(req->headers, req->header_count);
     printf("\n");
-    fwrite(req->body, 1, req->body_len, stdout);
+    if (req->body_len > 0 && req->body) fwrite(req->body, 1, req->body_len, stdout);
 }
