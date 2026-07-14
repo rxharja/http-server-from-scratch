@@ -12,7 +12,6 @@
 #include <netdb.h>
 #include <poll.h>
 #include "Networking.h"
-
 #include <assert.h>
 #include <fcntl.h>
 #include "Connection.h"
