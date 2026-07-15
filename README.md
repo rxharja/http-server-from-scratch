@@ -23,7 +23,7 @@ streaming.
 - Static file caching with `Content-Length`, `Content-Type`, `Cache-Control`
 - Dynamic file serving with `ETag` + `Last-Modified` revalidation (304 responses)
 - Streaming responses via chunked `Transfer-Encoding`: bodies are pulled in fixed-size chunks and never fully materialized, so a file larger than available RAM can still be served
-- Content registry with per-file delivery modes (static-resident, dynamic-resident, dynamic-streamed); register a single file or a whole directory
+- Content registry with a full 2x2 of per-file modes across freshness and delivery (static-resident, static-streamed, dynamic-resident, dynamic-streamed); register a single file or a whole directory
 - Chunked `Transfer-Encoding` decoding on requests
 - `Expect: 100-continue` handled: server emits an interim `100 Continue` before reading the body when the client asks for it and a body is actually coming; skipped when there's no body, when bytes are already buffered, or for HTTP/1.0
 - `HEAD` handled distinctly from `GET`
