@@ -30,21 +30,25 @@ target_include_directories(HttpServer
         PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-# === Example app ===
-add_executable(example_server examples/main.c)
-target_link_libraries(example_server PRIVATE HttpServer)
+# guarded building of example project and tests. This prevents including
+# the tests and example server into a separate project.
+if(PROJECT_IS_TOP_LEVEL)
+    # === Example app ===
+    add_executable(example_server examples/main.c)
+    target_link_libraries(example_server PRIVATE HttpServer)
 
-# === Tests ===
-# Tests need private headers (Connection.h, parser.h, etc.), so we grant
-# them access to src/ explicitly. This is a deliberate exception, only
-# in-tree tests get to peek behind the library's public API.
-add_executable(HttpServerTests
-        tests/test_harness.c
-        tests/RequestTests.c
-        tests/BodyTests.c
-        tests/ResponseTests.c
-        tests/StreamTests.c
-        tests/ArenaTests.c
-)
-target_link_libraries(HttpServerTests PRIVATE HttpServer)
-target_include_directories(HttpServerTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    # === Tests ===
+    # Tests need private headers (Connection.h, parser.h, etc.), so we grant
+    # them access to src/ explicitly. This is a deliberate exception, only
+    # in-tree tests get to peek behind the library's public API.
+    add_executable(HttpServerTests
+            tests/test_harness.c
+            tests/RequestTests.c
+            tests/BodyTests.c
+            tests/ResponseTests.c
+            tests/StreamTests.c
+            tests/ArenaTests.c
+    )
+    target_link_libraries(HttpServerTests PRIVATE HttpServer)
+    target_include_directories(HttpServerTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+endif()
