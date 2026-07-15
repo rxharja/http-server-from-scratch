@@ -346,7 +346,7 @@ int content_registry_add_dir(ContentRegistry * cache, const char * dir_path, con
     struct dirent *de;  // Pointer for directory entry
     DIR *dr = opendir(dir_path); // Open current directory
     if (dr == NULL) {
-        printf("Could not open current directory");
+        printf("Could not open current directory: %s\n", dir_path);
         return 0;
     }
 
