@@ -228,7 +228,7 @@ ContentLookupResult content_registry_lookup(ContentRegistry * registry, const Ht
         case SERVE_DYN_RESIDENT: {
             struct stat st;
 
-            if (stat(entry->reval->fs_path, &st) != 0) return (ContentLookupResult) { .status = CONTENT_GONE };// 404
+            if (stat(entry->reval->fs_path, &st) != 0) return (ContentLookupResult) { .status = CONTENT_GONE }; // 404
 
             // if modified times don't match or the sizes have changed
             if (st.st_mtime != entry->reval->mtime || st.st_size != entry->reval->size) {
@@ -248,8 +248,9 @@ ContentLookupResult content_registry_lookup(ContentRegistry * registry, const Ht
             return (ContentLookupResult) { .status = CONTENT_HIT, .entry = entry };
         }
 
-        default:
-        case SERVE_STATIC_RESIDENT: return (ContentLookupResult) { .status = CONTENT_HIT, .entry = entry };
+        case SERVE_STATIC_STREAMED:
+        case SERVE_STATIC_RESIDENT:
+        default: return (ContentLookupResult) { .status = CONTENT_HIT, .entry = entry };
 
     }
 
@@ -280,11 +281,31 @@ HttpResponse response_for_entry(const HttpRequest * req, const ContentEntry * en
      switch (entry->mode) {
         case SERVE_STATIC_RESIDENT:
         case SERVE_DYN_RESIDENT: return response_resident(req, entry);
+        case SERVE_STATIC_STREAMED:
         case SERVE_DYN_STREAMED: return response_streamed(entry, req->scratch);
      }
 
     return response_error_from_status(PARSE_SERVER_ERROR);
 }
+
+static ContentEntry * content_entry_streamed_load(const char * fs_path, const struct stat * st, const ServeMode mode, const char * cache_control) {
+    ContentEntry * entry = malloc(sizeof *entry);
+    if (!entry) return NULL;
+    entry->mode = mode;
+    entry->len = 0;
+
+    entry->reval = malloc(sizeof(RevalMeta));
+    if (!entry->reval) { free(entry); return NULL; }
+    reval_fill(entry->reval, st, fs_path);
+
+    entry->headers[0] = (ResponseHeader){ .key = "Content-Type",  .value = content_type(fs_path) };
+    entry->headers[1] = (ResponseHeader){ .key = "ETag",          .value = entry->reval->etag };
+    entry->headers[2] = (ResponseHeader){ .key = "Last-Modified", .value = entry->reval->last_modified };
+    entry->headers[3] = (ResponseHeader){ .key = "Cache-Control", .value = cache_control };
+
+    return entry;
+}
+
 
 int content_registry_add_file(ContentRegistry * cache, const char * fs_path, const char * url, const ServeMode mode) {
     struct stat st;
@@ -297,6 +318,13 @@ int content_registry_add_file(ContentRegistry * cache, const char * fs_path, con
             dict_insert(cache, url, entry);
             return 1;
         }
+        case SERVE_STATIC_STREAMED: {
+           ContentEntry * entry = content_entry_streamed_load(fs_path, &st, SERVE_STATIC_STREAMED,
+               "max-age=31536000, immutable");
+            if (!entry) return 0;
+            dict_insert(cache, url, entry);
+            return 1;
+        }
         case SERVE_DYN_RESIDENT: {
             ContentEntry * entry = content_entry_dynamic_load(url, fs_path, &st);
             if (entry == NULL) return 0;
@@ -304,23 +332,9 @@ int content_registry_add_file(ContentRegistry * cache, const char * fs_path, con
             return 1;
         }
         case SERVE_DYN_STREAMED: {
-            ContentEntry * entry = malloc(sizeof *entry);
+           ContentEntry * entry = content_entry_streamed_load(fs_path, &st, SERVE_DYN_STREAMED, "no-cache");
             if (!entry) return 0;
-
-            entry->mode = SERVE_DYN_STREAMED;
-            entry->len = 0;
-            entry->reval = malloc(sizeof(RevalMeta));
-            if (!entry->reval) { free(entry); return 0; }
-
-            reval_fill(entry->reval, &st, fs_path);
-
-            entry->headers[0] = (ResponseHeader){ .key = "Content-Type", .value = content_type(fs_path) };
-            entry->headers[1] = (ResponseHeader){ .key = "ETag", .value = entry->reval->etag };
-            entry->headers[2] = (ResponseHeader){ .key = "Last-Modified", .value = entry->reval->last_modified };
-            entry->headers[3] = (ResponseHeader){ .key = "Cache-Control", .value= "no-cache" };
-
             dict_insert(cache, url, entry);
-
             return 1;
         }
     }
