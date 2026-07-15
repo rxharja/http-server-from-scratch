@@ -46,6 +46,12 @@ static int has_header(const ResponseHeader *h, const size_t n, const char *key) 
     return 0;
 }
 
+// Value of the first header matching `key` among the first `n`, or NULL.
+static const char *header_value(const ResponseHeader *h, const size_t n, const char *key) {
+    for (size_t i = 0; i < n; i++) if (strcmp(h[i].key, key) == 0) return h[i].value;
+    return NULL;
+}
+
 // Write `content` to a fresh temp file; fills path_out (>= 32 bytes) with its
 // name. The producer opens its own fd, so we close ours here. Returns 0 on ok.
 static int make_temp(char *path_out, const char *content, const size_t len) {
@@ -202,6 +208,48 @@ void run_stream_tests(void) {
             }
 
             content_registry_free(reg); // frees the entry; producer ctx is independent
+            unlink(path);
+        }
+    }
+
+    // === static-streamed: stream off disk with an immutable cache header ===
+    // The fourth quadrant of the freshness x delivery matrix. Delivery is
+    // identical to SERVE_DYN_STREAMED (BODY_STREAM, no Content-Length); the only
+    // difference is the freshness policy, so the guard is that Cache-Control says
+    // "immutable" here where the dynamic mode says "no-cache".
+    {
+        if (make_temp(path, body, blen) == 0) {
+            ContentRegistry *reg = content_registry_create();
+            const int ok = content_registry_add_file(reg, path, "/asset.bin", SERVE_STATIC_STREAMED);
+            check("Static stream - registered", ok == 1, "add_file did not return 1");
+
+            const ContentLookupResult d = content_registry_lookup(reg, NULL, "/asset.bin");
+            check("Static stream - lookup hit", d.status == CONTENT_HIT, "expected CONTENT_HIT");
+
+            if (d.entry) {
+                check("Static stream - mode",
+                      d.entry->mode == SERVE_STATIC_STREAMED, "mode is not SERVE_STATIC_STREAMED");
+                const char *cc = header_value(d.entry->headers, 4, "Cache-Control");
+                check("Static stream - immutable cache header",
+                      cc && strcmp(cc, "max-age=31536000, immutable") == 0,
+                      "Cache-Control is not the immutable policy");
+                check("Static stream - no content-length",
+                      !has_header(d.entry->headers, 4, "Content-Length"),
+                      "static-streamed entry carries Content-Length");
+
+                HttpResponse res = response_for_entry(stream_req(), d.entry);
+                check("Static stream - dispatch is stream",
+                      res.kind == BODY_STREAM, "response_for_entry not BODY_STREAM");
+                if (res.kind == BODY_STREAM && res.body.stream.pull) {
+                    const ssize_t n = drain(&res.body.stream, out, sizeof(out), sizeof(out));
+                    check("Static stream - body matches",
+                          n == (ssize_t)blen && memcmp(out, body, blen) == 0,
+                          "streamed body did not match source");
+                    res.body.stream.cleanup(res.body.stream.ctx);
+                }
+            }
+
+            content_registry_free(reg);
             unlink(path);
         }
     }
