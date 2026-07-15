@@ -25,10 +25,14 @@ typedef struct {
     const void *data;
 } Route;
 
+// The full 2x2 of freshness (static = immutable, dyn = revalidated) x delivery
+// (resident = held in memory, streamed = reopened and pumped per request).
+// See content_registry_add_file for the per-mode behavior.
 typedef enum {
     SERVE_STATIC_RESIDENT,
+    SERVE_STATIC_STREAMED,
     SERVE_DYN_RESIDENT,
-    SERVE_DYN_STREAMED
+    SERVE_DYN_STREAMED,
 } ServeMode;
 
 typedef struct {
@@ -155,12 +159,18 @@ HttpResponse response_streamed(const ContentEntry * file, Arena * scratch);
 /**
  * Register a single file under `url`, choosing its caching and delivery
  * behavior via `mode`:
- *   SERVE_STATIC_RESIDENT: body read into the entry once, never revalidated.
+ *   SERVE_STATIC_RESIDENT: body read into the entry once, never revalidated;
+ *                          served with an immutable, cache-forever policy.
+ *   SERVE_STATIC_STREAMED: no body stored; the file is reopened and pumped in
+ *                          chunks at request time, but served with the same
+ *                          immutable cache policy as SERVE_STATIC_RESIDENT. Use
+ *                          for large unchanging assets too big to hold resident.
  *   SERVE_DYN_RESIDENT:    body read into the entry, re-stat'd per request,
  *                          reloaded if it changed; carries ETag/Last-Modified.
  *   SERVE_DYN_STREAMED:    no body stored; the file is reopened and pumped in
- *                          chunks at request time. Omits Content-Length, since
- *                          streamed bodies are sent with chunked transfer-encoding.
+ *                          chunks at request time, revalidated (no-cache).
+ * Both streamed modes omit Content-Length, since streamed bodies are sent with
+ * chunked transfer-encoding.
  *
  * @param cache    destination registry
  * @param fs_path  filesystem path of the source file
