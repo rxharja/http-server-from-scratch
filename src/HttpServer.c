@@ -43,6 +43,11 @@ static short conn_phase_event(const ConnPhase phase) {
 }
 
 int server_run(const char * port, const Router * router, const size_t backlog) {
+    if (server_port_valid(port) != 0) {
+        printf("Invalid port number\n");
+        exit(EXIT_FAILURE);
+    }
+
     if (router_has_duplicate_routes(router)) {
         perror("Cannot have duplicate routes.\n");
         exit(EXIT_FAILURE);

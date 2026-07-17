@@ -6,9 +6,21 @@
 
 #define BACKLOG 10
 
-static HttpResponse not_found(const HttpRequest * request) {
+static HttpResponse entry(const HttpRequest * request) {
     static const ResponseHeader h[1] = { { "Content-Type", "text/html" }, };
-    static const char body[] = "<h1 style=\"font-family: sans-serif; color: orange;\">Welcome to my test page</h1>\n";
+
+    static const char body[] =
+        "<h1>First and Last Name</h1>"
+        "<form method=POST action=\"/submit\">"
+            "<label for=\"fname\">First name:</label>"
+            "<input type=\"text\" id=\"fname\" name=\"fname\"><br><br>"
+
+            "<label for=\"lname\">Last name:</label>"
+            "<input type=\"text\" id=\"lname\" name=\"lname\"><br><br>"
+
+            "<input type=\"submit\" value=\"Submit\">"
+        "</form>";
+
     static const HttpResponse response = {
         .status = 200, .reason = "OK",
         .headers = h,  .header_count = 1,
@@ -18,7 +30,7 @@ static HttpResponse not_found(const HttpRequest * request) {
     return response;
 }
 
-static HttpResponse do_something(const HttpRequest * request) {
+static HttpResponse submit(const HttpRequest * request) {
     static const ResponseHeader h[1] = { { "Content-Type", "text/html" }, };
     HttpResponse response = {
         .status = 200, .reason = "OK",
@@ -36,18 +48,13 @@ static HttpResponse do_something(const HttpRequest * request) {
 
 int main(const int argc, char *argv[]) {
     if (argc != 2) {
-       printf("Usage: %s <port>\n", argv[0]);
-        exit(EXIT_FAILURE);
-    }
-
-    if (server_port_valid(argv[1]) != 0) {
-        printf("Invalid port number\n");
+        printf("Usage: %s <port>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
 
     Route routes[2] = {
-        { "GET",  "/test", not_found },
-        { "POST", "/test", do_something }
+        { "GET",  "/form", entry },
+        { "POST", "/submit", submit }
     };
 
     const Router router = {
